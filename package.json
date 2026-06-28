@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"node --watch server/index.mjs\"",
+    "dev": "concurrently \"vite\" \"node server/index.mjs\"",
     "dev:client": "vite",
-    "dev:server": "node --watch server/index.mjs",
+    "dev:server": "node server/index.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",

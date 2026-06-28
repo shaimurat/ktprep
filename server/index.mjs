@@ -12,9 +12,17 @@ if (!databaseUrl) {
   throw new Error('DATABASE_URL is required')
 }
 
+const parsedDatabaseUrl = new URL(databaseUrl)
+const isLocalDatabase = ['localhost', '127.0.0.1'].includes(parsedDatabaseUrl.hostname)
+
+// SSL is configured explicitly below, so remove the duplicate URL option.
+parsedDatabaseUrl.searchParams.delete('sslmode')
+parsedDatabaseUrl.searchParams.delete('uselibpqcompat')
+
 const pool = new Pool({
-  connectionString: databaseUrl,
-  ssl: databaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+  connectionString: parsedDatabaseUrl.toString(),
+  ssl: isLocalDatabase ? false : { rejectUnauthorized: true },
+  connectionTimeoutMillis: 10_000,
 })
 
 const app = express()
@@ -31,7 +39,7 @@ app.use((req, res, next) => {
   next()
 })
 
-await pool.query(`
+const schemaReady = pool.query(`
   CREATE TABLE IF NOT EXISTS questions (
     id TEXT PRIMARY KEY,
     data JSONB NOT NULL,
@@ -51,6 +59,7 @@ await pool.query(`
 const collectionRoutes = (route, table) => {
   app.get(`/api/${route}`, async (_req, res, next) => {
     try {
+      await schemaReady
       const { rows } = await pool.query(
         `SELECT data FROM ${table} ORDER BY position ASC NULLS LAST, id`,
       )
@@ -65,8 +74,10 @@ const collectionRoutes = (route, table) => {
       return res.status(400).json({ error: 'Expected a JSON array' })
     }
 
-    const client = await pool.connect()
+    let client
     try {
+      await schemaReady
+      client = await pool.connect()
       await client.query('BEGIN')
       await client.query(`DELETE FROM ${table}`)
       for (const [position, item] of req.body.entries()) {
@@ -81,10 +92,10 @@ const collectionRoutes = (route, table) => {
       await client.query('COMMIT')
       res.sendStatus(204)
     } catch (error) {
-      await client.query('ROLLBACK')
+      if (client) await client.query('ROLLBACK')
       next(error)
     } finally {
-      client.release()
+      client?.release()
     }
   })
 }
@@ -94,6 +105,7 @@ collectionRoutes('results', 'test_results')
 
 app.get('/api/health', async (_req, res, next) => {
   try {
+    await schemaReady
     await pool.query('SELECT 1')
     res.json({ ok: true })
   } catch (error) {
@@ -111,7 +123,16 @@ app.use((req, res, next) => {
 
 app.use((error, _req, res, _next) => {
   console.error(error)
-  res.status(500).json({ error: 'Database request failed' })
+  res.status(500).json({
+    error: 'Database request failed',
+    code: error.code,
+    detail: error.message,
+  })
 })
 
-
+app.listen(port, () => {
+  console.log(`KT Prep server is running on http://localhost:${port}`)
+  schemaReady
+    .then(() => console.log('PostgreSQL connection is ready'))
+    .catch((error) => console.error('PostgreSQL connection failed:', error))
+})
