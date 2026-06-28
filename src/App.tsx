@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import {
   ArrowLeft,
+  AlertTriangle,
   BarChart3,
   BookOpen,
   Check,
@@ -56,8 +57,18 @@ const defaultKtSettings: KtSettings = {
 }
 
 function App() {
-  const [questions, setQuestions] = useDatabaseState(loadQuestions, saveQuestions, demoQuestions)
-  const [results, setResults] = useDatabaseState<TestResult[]>(loadResults, saveResults, [])
+  const [questions, setQuestions, questionsError] = useDatabaseState(
+    loadQuestions,
+    saveQuestions,
+    demoQuestions,
+    'Новые вопросы',
+  )
+  const [results, setResults, resultsError] = useDatabaseState<TestResult[]>(
+    loadResults,
+    saveResults,
+    [],
+    'Результаты тестов',
+  )
   const [view, setView] = useState<View>('home')
   const [selectedSubject, setSelectedSubject] = useState<Subject>('tgo')
   const [activeQuiz, setActiveQuiz] = useState<{
@@ -177,6 +188,15 @@ function App() {
       </aside>
 
       <section className="workspace">
+        {(questionsError || resultsError) && (
+          <div className="database-error" role="alert">
+            <AlertTriangle aria-hidden="true" />
+            <div>
+              <strong>Ошибка базы данных</strong>
+              <span>{questionsError || resultsError}</span>
+            </div>
+          </div>
+        )}
         {view === 'home' && (
           <HomePage
             counts={counts}
@@ -382,22 +402,30 @@ function AddQuestionsPage({
   onAdd,
 }: {
   selectedSubject: Subject
-  onAdd: (questions: Question[]) => void
+  onAdd: (questions: Question[]) => Promise<boolean>
 }) {
   const [form, setForm] = useState({ ...defaultQuestionForm, subject: selectedSubject })
   const [bulk, setBulk] = useState(jsonExample)
   const [message, setMessage] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const submitSingle = () => {
+  const submitSingle = async () => {
     const result = normalizeQuestion(form)
     if (result.error || !result.question) {
       setMessage(result.error ?? 'Проверьте вопрос.')
       return
     }
 
-    onAdd([{ ...result.question, id: createId() }])
-    setForm({ ...defaultQuestionForm, subject: form.subject, topic: form.topic })
-    setMessage('Вопрос добавлен.')
+    setSaving(true)
+    setMessage('')
+    const saved = await onAdd([{ ...result.question, id: createId() }])
+    setSaving(false)
+    if (saved) {
+      setForm({ ...defaultQuestionForm, subject: form.subject, topic: form.topic })
+      setMessage('Вопрос успешно сохранён в базе данных.')
+    } else {
+      setMessage('Не удалось сохранить вопрос в базе данных.')
+    }
   }
 
   const checkJson = () => {
@@ -405,15 +433,20 @@ function AddQuestionsPage({
     setMessage(result.error || `JSON корректный. Найдено вопросов: ${result.questions.length}.`)
   }
 
-  const addBulk = () => {
+  const addBulk = async () => {
     const result = parseQuestionsJson(bulk)
     if (result.error) {
       setMessage(result.error)
       return
     }
 
-    onAdd(result.questions)
-    setMessage(`Добавлено вопросов: ${result.questions.length}.`)
+    setSaving(true)
+    setMessage('')
+    const saved = await onAdd(result.questions)
+    setSaving(false)
+    setMessage(saved
+      ? `Успешно сохранено вопросов: ${result.questions.length}.`
+      : 'Не удалось сохранить вопросы в базе данных.')
   }
 
   return (
@@ -423,8 +456,8 @@ function AddQuestionsPage({
         <section className="panel">
           <h2>Один вопрос</h2>
           <QuestionEditor value={form} onChange={(value) => setForm(value as Omit<Question, 'id'>)} />
-          <button className="primary-button full" type="button" onClick={submitSingle}>
-            <Plus size={18} /> Добавить вопрос
+          <button className="primary-button full" type="button" onClick={submitSingle} disabled={saving}>
+            <Plus size={18} /> {saving ? 'Сохранение…' : 'Добавить вопрос'}
           </button>
         </section>
 
@@ -440,8 +473,8 @@ function AddQuestionsPage({
             <button className="secondary-button" type="button" onClick={checkJson}>
               <Check size={18} /> Проверить JSON
             </button>
-            <button className="primary-button" type="button" onClick={addBulk}>
-              <Plus size={18} /> Добавить все вопросы
+            <button className="primary-button" type="button" onClick={addBulk} disabled={saving}>
+              <Plus size={18} /> {saving ? 'Сохранение…' : 'Добавить все вопросы'}
             </button>
           </div>
           <pre className="format-note">{jsonExample}</pre>

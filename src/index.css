@@ -430,6 +430,33 @@ textarea {
   box-shadow: var(--shadow);
 }
 
+.database-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+
+.database-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.database-error div {
+  display: grid;
+  gap: 3px;
+}
+
+.database-error span {
+  color: #b91c1c;
+}
+
 .toolbar {
   align-items: end;
   margin-bottom: 18px;
