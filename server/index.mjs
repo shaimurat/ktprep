@@ -114,4 +114,6 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: 'Database request failed' })
 })
 
-
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`)
+})
