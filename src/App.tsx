@@ -28,7 +28,12 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { parseQuestionsJson, jsonExample, normalizeQuestion } from './features/questions/validation'
+import {
+  parseQuestionsJson,
+  jsonExample,
+  normalizeQuestion,
+  pseudocodeJsonExample,
+} from './features/questions/validation'
 import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './shared/answers'
 import { loadQuestions, loadResults, saveQuestions, saveResults } from './storage/apiStorage'
 import { useDatabaseState } from './storage/useDatabaseState'
@@ -483,9 +488,24 @@ function AddQuestionsPage({
         <section className="panel">
           <div className="split-title">
             <h2>Массовое добавление</h2>
-            <button className="ghost-button" type="button" onClick={() => setBulk(jsonExample)}>
-              Вставить пример
-            </button>
+            <div className="example-actions">
+              <button className="ghost-button" type="button" onClick={() => setBulk(jsonExample)}>
+                Обычный пример
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setBulk(pseudocodeJsonExample)}>
+                Пример с псевдокодом
+              </button>
+            </div>
+          </div>
+          <div className="pseudocode-import-hint">
+            <Braces size={20} />
+            <div>
+              <strong>Как добавить вопрос с псевдокодом</strong>
+              <p>
+                Запишите формулировку и код в поле <code>question</code>. Отделите код пустой строкой
+                через <code>\n\n</code>, а каждую новую строку кода — через <code>\n</code>.
+              </p>
+            </div>
           </div>
           <textarea className="json-area" value={bulk} onChange={(event) => setBulk(event.target.value)} />
           <div className="button-row">
@@ -496,7 +516,10 @@ function AddQuestionsPage({
               <Plus size={18} /> {saving ? 'Сохранение…' : 'Добавить все вопросы'}
             </button>
           </div>
-          <pre className="format-note">{jsonExample}</pre>
+          <details className="json-help">
+            <summary>Посмотреть готовый JSON с псевдокодом</summary>
+            <pre className="format-note">{pseudocodeJsonExample}</pre>
+          </details>
         </section>
       </div>
       {message && <div className="toast">{message}</div>}

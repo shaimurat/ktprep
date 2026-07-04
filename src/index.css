@@ -416,6 +416,62 @@ textarea {
   font-size: 13px;
 }
 
+.example-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pseudocode-import-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
+  border: 1px solid #c7d7fe;
+  border-radius: var(--radius);
+  background: #f2f6ff;
+  color: #274272;
+  padding: 14px;
+}
+
+.pseudocode-import-hint > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--primary);
+}
+
+.pseudocode-import-hint div {
+  display: grid;
+  gap: 5px;
+}
+
+.pseudocode-import-hint p {
+  color: #526584;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.pseudocode-import-hint code {
+  border-radius: 5px;
+  background: #dfe9ff;
+  color: #1746a2;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 800;
+}
+
+.json-help {
+  margin-top: 14px;
+}
+
+.json-help summary {
+  width: fit-content;
+  color: var(--primary-dark);
+  cursor: pointer;
+  font-weight: 800;
+}
+
 .format-note {
   overflow: auto;
   max-height: 220px;

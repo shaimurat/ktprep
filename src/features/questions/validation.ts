@@ -30,6 +30,22 @@ export const jsonExample = `[
   }
 ]`
 
+export const pseudocodeJsonExample = `[
+  {
+    "subject": "algorithms",
+    "topic": "Алгоритмы и сортировки",
+    "question": "Какой алгоритм соответствует псевдокоду?\\n\\nBUILD_MAX_HEAP(A)\\nfor end = n - 1 down to 1\\n    swap(A[0], A[end])\\n    heapSize = heapSize - 1\\n    HEAPIFY(A, 0)",
+    "options": {
+      "A": "Heap Sort",
+      "B": "Insertion Sort",
+      "C": "Radix Sort",
+      "D": "Bubble Sort"
+    },
+    "correctAnswers": ["A"],
+    "explanation": "Сначала строится max-heap, затем максимальный элемент перемещается в конец массива."
+  }
+]`
+
 const isSubject = (value: unknown): value is Subject =>
   typeof value === 'string' && SUBJECT_IDS.includes(value as Subject)
 
