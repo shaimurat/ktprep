@@ -563,7 +563,7 @@ function ManageQuestionsPage({
               <span className="badge">{subjectById(question.subject).title}</span>
               <span className="badge topic-badge">{question.topic}</span>
             </div>
-            <h3>{question.question}</h3>
+            <QuestionPrompt text={question.question} level="h3" />
             <div className="answers-grid">
               {getQuestionOptions(question).map((answer) => (
                 <div className={getCorrectAnswers(question).includes(answer) ? 'answer correct' : 'answer'} key={answer}>
@@ -804,7 +804,7 @@ function QuizRunner({
       </div>
       <div className="progress"><span style={{ width: `${progress}%` }} /></div>
       <section className="panel quiz-card">
-        <h2>{question.question}</h2>
+        <QuestionPrompt text={question.question} level="h2" />
         <p className="muted quiz-hint">Можно выбрать несколько вариантов ответа.</p>
         <div className="option-list">
           {getQuestionOptions(question).map((answer) => (
@@ -980,7 +980,7 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                         <span className="badge">{subjectById(question.subject).title}</span>
                         <span className="badge topic-badge">{question.topic}</span>
                       </div>
-                      <h3>{question.question}</h3>
+                      <QuestionPrompt text={question.question} level="h3" />
                       <p className="result-answer-line">
                         Ваш ответ: <b className={isCorrect ? 'answer-good' : 'answer-bad'}>{formatAnswers(quiz.answers[question.id]) || '—'}</b>
                         <span>•</span>
@@ -1045,6 +1045,93 @@ function SubjectResultIcon({ subject }: { subject: Subject }) {
         : <Braces />
 
   return <span className="result-subject-icon">{icon}</span>
+}
+
+function QuestionPrompt({ text, level }: { text: string; level: 'h2' | 'h3' }) {
+  const { prompt, code } = splitQuestionCode(text)
+  const title = level === 'h2' ? <h2>{prompt}</h2> : <h3>{prompt}</h3>
+
+  return (
+    <div className="question-prompt">
+      {title}
+      {code && <PseudocodeBlock code={code} />}
+    </div>
+  )
+}
+
+function PseudocodeBlock({ code }: { code: string }) {
+  const lines = code.split('\n')
+
+  return (
+    <div className="pseudocode" aria-label="Псевдокод">
+      <div className="pseudocode-toolbar">
+        <span className="pseudocode-dots" aria-hidden="true"><i /><i /><i /></span>
+        <span>Псевдокод</span>
+      </div>
+      <pre>
+        <code>
+          {lines.map((line, index) => (
+            <span className="pseudocode-line" key={`${index}-${line}`}>
+              <span className="pseudocode-line-number" aria-hidden="true">{index + 1}</span>
+              <span>{highlightPseudocode(line)}</span>
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
+  )
+}
+
+function splitQuestionCode(text: string) {
+  const fenced = text.match(/^(.*?)```(?:\w+)?\s*\n?([\s\S]*?)```\s*$/)
+  if (fenced) {
+    return { prompt: fenced[1].trim(), code: fenced[2].trim() }
+  }
+
+  const blankLineIndex = text.search(/\n\s*\n/)
+  if (blankLineIndex >= 0) {
+    const prompt = text.slice(0, blankLineIndex).trim()
+    const candidate = text.slice(blankLineIndex).trim()
+    if (looksLikePseudocode(candidate)) return { prompt, code: candidate }
+  }
+
+  const questionEnd = text.indexOf('?')
+  if (questionEnd >= 0) {
+    const candidate = text.slice(questionEnd + 1).trim()
+    if (looksLikePseudocode(candidate)) {
+      return {
+        prompt: text.slice(0, questionEnd + 1).trim(),
+        code: normalizeInlinePseudocode(candidate),
+      }
+    }
+  }
+
+  return { prompt: text, code: '' }
+}
+
+function looksLikePseudocode(value: string) {
+  return /\b(for|while|if|else|return|swap|heapify|build[_\s-]*max[_\s-]*heap|quicksort|partition|merge|function)\b/i.test(value)
+}
+
+function normalizeInlinePseudocode(value: string) {
+  if (value.includes('\n')) return value
+
+  return value
+    .replace(/\s+(?=(?:for|while|if|else|return|swap|heapSize|HEAPIFY|BUILD_|QUICKSORT|PARTITION|MERGE)\b)/g, '\n')
+    .trim()
+}
+
+function highlightPseudocode(line: string) {
+  const parts = line.split(/(\b(?:for|to|down|while|if|then|else|return|and|or|not|function)\b|\b\d+\b)/gi)
+  return parts.map((part, index) => {
+    if (/^(for|to|down|while|if|then|else|return|and|or|not|function)$/i.test(part)) {
+      return <b className="code-keyword" key={`${index}-${part}`}>{part}</b>
+    }
+    if (/^\d+$/.test(part)) {
+      return <b className="code-number" key={`${index}-${part}`}>{part}</b>
+    }
+    return part
+  })
 }
 
 function StatisticsPage({ results, onClear }: { results: TestResult[]; onClear: () => void }) {
