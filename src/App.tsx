@@ -1,21 +1,32 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+import { CircularProgressbar, buildStyles } from 'react-circular-progressbar'
+import 'react-circular-progressbar/dist/styles.css'
 import {
   ArrowLeft,
   AlertTriangle,
   BarChart3,
   BookOpen,
+  Braces,
+  CalendarDays,
   Check,
+  CheckCircle2,
+  ChevronDown,
   Database,
   Edit3,
+  FileText,
   GraduationCap,
   Home,
+  Languages,
   Layers3,
   ListChecks,
   Play,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
+  X,
+  XCircle,
 } from 'lucide-react'
 import { parseQuestionsJson, jsonExample, normalizeQuestion } from './features/questions/validation'
 import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './shared/answers'
@@ -164,6 +175,14 @@ function App() {
     if (!activeQuiz || activeQuiz.finished) return
     saveResult(activeQuiz.mode, activeQuiz.questions, activeQuiz.answers)
     setActiveQuiz({ ...activeQuiz, finished: true })
+  }
+
+  if (activeQuiz?.finished) {
+    return (
+      <main className="result-page-shell">
+        <QuizResult quiz={activeQuiz} onReset={() => setActiveQuiz(null)} />
+      </main>
+    )
   }
 
   return (
@@ -831,7 +850,9 @@ function QuizRunner({
 }
 
 function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }) {
-  const mistakes = quiz.questions.filter((question) => !answersMatch(quiz.answers[question.id], getCorrectAnswers(question)))
+  const [subjectFilter, setSubjectFilter] = useState<Subject | 'all'>('all')
+  const [sortMode, setSortMode] = useState<'errors' | 'order'>('errors')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const bySubject = emptyBySubject()
   let correct = 0
 
@@ -844,38 +865,186 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
   })
 
   const percentage = Math.round((correct / quiz.questions.length) * 100)
+  const incorrect = quiz.questions.length - correct
+  const visibleQuestions = quiz.questions
+    .map((question, index) => ({ question, index }))
+    .filter(({ question }) => subjectFilter === 'all' || question.subject === subjectFilter)
+    .sort((a, b) => {
+      if (sortMode === 'order') return a.index - b.index
+      const aCorrect = answersMatch(quiz.answers[a.question.id], getCorrectAnswers(a.question))
+      const bCorrect = answersMatch(quiz.answers[b.question.id], getCorrectAnswers(b.question))
+      return Number(aCorrect) - Number(bCorrect) || a.index - b.index
+    })
+  const resultMessage = percentage >= 85
+    ? 'Отличная работа! Ты уверенно справился с тестом.'
+    : percentage >= 60
+      ? `Хорошая работа! Ты справился лучше, чем ${percentage}% участников.`
+      : 'Хорошее начало. Разбери ошибки и попробуй ещё раз.'
 
   return (
-    <>
-      <PageTitle title="Результат" text={`${correct} из ${quiz.questions.length} правильных ответов. Процент: ${percentage}%.`} />
-      <section className="stats-grid">
-        {SUBJECTS.map((subject) => (
-          <article className="metric-card" key={subject.id}>
-            <span>{subject.title}</span>
-            <strong>{bySubject[subject.id].correct}/{bySubject[subject.id].total}</strong>
-          </article>
-        ))}
-      </section>
-      <section className="panel">
-        <h2>Ошибки и объяснения</h2>
-        {mistakes.map((question) => (
-          <div className="mistake" key={question.id}>
-            <div className="badge-row">
-              <span className="badge">{subjectById(question.subject).title}</span>
-              <span className="badge topic-badge">{question.topic}</span>
-            </div>
-            <h3>{question.question}</h3>
-            <p>Ваш ответ: {formatAnswers(quiz.answers[question.id])} · Правильные ответы: {formatAnswers(getCorrectAnswers(question))}</p>
-            {question.explanation && <p className="muted">{question.explanation}</p>}
-          </div>
-        ))}
-        {!mistakes.length && <EmptyState text="Ошибок нет. Отличный проход." />}
-        <button className="primary-button" type="button" onClick={onReset}>
-          Новый тест
+    <div className="result-page">
+      <header className="result-header">
+        <button className="result-brand" type="button" onClick={onReset}>
+          <span className="result-brand-mark">K</span>
+          <strong>KT PREP TRAINER</strong>
         </button>
+        <div className="result-date">
+          <CalendarDays size={20} />
+          <span>Дата теста: {new Date().toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}</span>
+        </div>
+      </header>
+
+      <section className="result-surface">
+        <div className="result-summary-layout">
+          <div className="result-intro">
+            <h1>Результат</h1>
+            <p>{resultMessage}</p>
+            <div className="result-subject-cards">
+              {SUBJECTS.map((subject) => (
+                <article className="result-subject-card" key={subject.id} style={{ '--subject-color': subject.color } as CSSProperties}>
+                  <SubjectResultIcon subject={subject.id} />
+                  <div>
+                    <span>{subject.title}</span>
+                    <strong>{bySubject[subject.id].correct}/{bySubject[subject.id].total}</strong>
+                    <small>вопросов</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <article className="result-score-card">
+            <div className="result-ring">
+              <CircularProgressbar
+                value={percentage}
+                text={`${percentage}%`}
+                styles={buildStyles({
+                  pathColor: '#2563eb',
+                  trailColor: '#e4ebf7',
+                  textColor: '#101828',
+                  strokeLinecap: 'butt',
+                })}
+              />
+              <span>правильных</span>
+            </div>
+            <div className="result-score-copy">
+              <strong>{correct} <small>из {quiz.questions.length}</small></strong>
+              <span>правильных ответов</span>
+              <div className="result-score-stats">
+                <div>
+                  <span>Правильно</span>
+                  <strong className="score-good">{correct}</strong>
+                  <CheckCircle2 />
+                </div>
+                <div>
+                  <span>Ошибок</span>
+                  <strong className="score-bad">{incorrect}</strong>
+                  <XCircle />
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div className="result-details-layout">
+          <section className="result-review-card">
+            <div className="result-review-header">
+              <h2>Ошибки и объяснения</h2>
+              <div className="result-filters">
+                <label>
+                  <span className="sr-only">Фильтр по предмету</span>
+                  <select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value as Subject | 'all')}>
+                    <option value="all">Все предметы</option>
+                    {SUBJECTS.map((subject) => <option key={subject.id} value={subject.id}>{subject.title}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span className="sr-only">Сортировка</span>
+                  <select value={sortMode} onChange={(event) => setSortMode(event.target.value as 'errors' | 'order')}>
+                    <option value="errors">Сначала ошибки</option>
+                    <option value="order">По порядку</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="result-question-list">
+              {visibleQuestions.map(({ question }) => {
+                const isCorrect = answersMatch(quiz.answers[question.id], getCorrectAnswers(question))
+                const isExpanded = Boolean(expanded[question.id])
+                return (
+                  <article className={`result-question ${isCorrect ? 'is-correct' : 'is-wrong'}`} key={question.id}>
+                    <div className="result-status-icon">{isCorrect ? <Check /> : <X />}</div>
+                    <div className="result-question-content">
+                      <div className="badge-row">
+                        <span className="badge">{subjectById(question.subject).title}</span>
+                        <span className="badge topic-badge">{question.topic}</span>
+                      </div>
+                      <h3>{question.question}</h3>
+                      <p className="result-answer-line">
+                        Ваш ответ: <b className={isCorrect ? 'answer-good' : 'answer-bad'}>{formatAnswers(quiz.answers[question.id]) || '—'}</b>
+                        <span>•</span>
+                        Правильный ответ: <b className="answer-good">{formatAnswers(getCorrectAnswers(question))}</b>
+                      </p>
+                      {question.explanation && (isExpanded || !isCorrect) && <p className="result-explanation">{question.explanation}</p>}
+                    </div>
+                    <button
+                      className="result-detail-button"
+                      type="button"
+                      aria-expanded={isExpanded}
+                      onClick={() => setExpanded({ ...expanded, [question.id]: !isExpanded })}
+                    >
+                      {isExpanded ? 'Скрыть' : 'Подробнее'} <ChevronDown size={16} />
+                    </button>
+                  </article>
+                )
+              })}
+              {!visibleQuestions.length && <EmptyState text="По выбранному предмету вопросов нет." />}
+            </div>
+          </section>
+
+          <aside className="result-by-subject">
+            <h2>Результаты по темам</h2>
+            <div className="result-subject-list">
+              {SUBJECTS.map((subject) => {
+                const item = bySubject[subject.id]
+                const subjectPercentage = item.total ? Math.round((item.correct / item.total) * 100) : 0
+                return (
+                  <div className="result-subject-row" key={subject.id} style={{ '--subject-color': subject.color } as CSSProperties}>
+                    <SubjectResultIcon subject={subject.id} />
+                    <div>
+                      <span>{subject.title}</span>
+                      <strong>{item.correct} из {item.total}</strong>
+                      <div className="subject-progress"><span style={{ width: `${subjectPercentage}%` }} /></div>
+                    </div>
+                    <small>{subjectPercentage}%</small>
+                  </div>
+                )
+              })}
+            </div>
+          </aside>
+        </div>
+
+        <footer className="result-footer">
+          <button className="primary-button result-new-test" type="button" onClick={onReset}>
+            <RotateCcw size={18} /> Новый тест
+          </button>
+        </footer>
       </section>
-    </>
+    </div>
   )
+}
+
+function SubjectResultIcon({ subject }: { subject: Subject }) {
+  const icon = subject === 'tgo'
+    ? <FileText />
+    : subject === 'english'
+      ? <Languages />
+      : subject === 'databases'
+        ? <Database />
+        : <Braces />
+
+  return <span className="result-subject-icon">{icon}</span>
 }
 
 function StatisticsPage({ results, onClear }: { results: TestResult[]; onClear: () => void }) {
