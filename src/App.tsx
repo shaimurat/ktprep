@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar'
 import 'react-circular-progressbar/dist/styles.css'
@@ -20,10 +20,12 @@ import {
   Languages,
   Layers3,
   ListChecks,
+  Moon,
   Play,
   Plus,
   RotateCcw,
   Search,
+  Sun,
   Trash2,
   X,
   XCircle,
@@ -55,6 +57,7 @@ type QuizSettings = {
 }
 type KtSettings = Record<Subject, number>
 type AnswerMap = Record<string, AnswerKey[] | undefined>
+type Theme = 'light' | 'dark'
 
 const defaultQuestionForm: Omit<Question, 'id'> = {
   subject: 'databases',
@@ -73,6 +76,11 @@ const defaultKtSettings: KtSettings = {
 }
 
 function App() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    const savedTheme = localStorage.getItem('kt-theme')
+    if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
   const [questions, setQuestions, questionsError] = useDatabaseState(
     loadQuestions,
     saveQuestions,
@@ -96,6 +104,12 @@ function App() {
     checked: Record<string, boolean>
     finished: boolean
   } | null>(null)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    localStorage.setItem('kt-theme', theme)
+  }, [theme])
 
   const counts = useMemo(
     () =>
@@ -209,6 +223,25 @@ function App() {
           <NavButton icon={<Layers3 />} label="Реальный КТ" active={view === 'kt'} onClick={() => navigate('kt')} />
           <NavButton icon={<BarChart3 />} label="Статистика" active={view === 'stats'} onClick={() => navigate('stats')} />
         </nav>
+        <button
+          className="theme-toggle"
+          type="button"
+          role="switch"
+          aria-checked={theme === 'dark'}
+          aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        >
+          <span className="theme-toggle-icon" aria-hidden="true">
+            {theme === 'dark' ? <Moon /> : <Sun />}
+          </span>
+          <span className="theme-toggle-label">
+            <strong>Тёмная тема</strong>
+            <small>{theme === 'dark' ? 'Включена' : 'Выключена'}</small>
+          </span>
+          <span className="theme-toggle-track" aria-hidden="true">
+            <span />
+          </span>
+        </button>
       </aside>
 
       <section className="workspace">
@@ -942,9 +975,9 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                 value={percentage}
                 text={`${percentage}%`}
                 styles={buildStyles({
-                  pathColor: '#2563eb',
-                  trailColor: '#e4ebf7',
-                  textColor: '#101828',
+                  pathColor: 'var(--primary)',
+                  trailColor: 'var(--progress-track)',
+                  textColor: 'var(--text)',
                   strokeLinecap: 'butt',
                 })}
               />
