@@ -46,7 +46,7 @@ import { createId } from './utils/id'
 import { shuffle } from './utils/shuffle'
 
 type View = 'home' | 'subjects' | 'add' | 'manage' | 'quiz' | 'kt' | 'stats'
-type QuizMode = 'subject' | 'random' | 'kt'
+type QuizMode = 'subject' | 'random' | 'kt' | 'kt-hard'
 type QuizScope = 'topic' | 'subject' | 'random'
 type QuizSettings = {
   subject: Subject
@@ -55,9 +55,16 @@ type QuizSettings = {
   count: number | 'all'
   showExplanation: boolean
 }
+type HardQuizSettings = {
+  topic?: string
+  count: number | 'all'
+  showExplanation: boolean
+}
 type KtSettings = Record<Subject, number>
 type AnswerMap = Record<string, AnswerKey[] | undefined>
 type Theme = 'light' | 'dark'
+
+const ALGORITHMS_HARD_TOPIC_PREFIX = 'КТ Hard —'
 
 const defaultQuestionForm: Omit<Question, 'id'> = {
   subject: 'databases',
@@ -111,16 +118,19 @@ function App() {
     localStorage.setItem('kt-theme', theme)
   }, [theme])
 
+  const mainQuestions = useMemo(() => questions.filter((question) => !isAlgorithmsHardQuestion(question)), [questions])
+  const hardQuestions = useMemo(() => questions.filter(isAlgorithmsHardQuestion), [questions])
+
   const counts = useMemo(
     () =>
       SUBJECTS.reduce(
         (acc, subject) => {
-          acc[subject.id] = questions.filter((question) => question.subject === subject.id).length
+          acc[subject.id] = mainQuestions.filter((question) => question.subject === subject.id).length
           return acc
         },
         {} as Record<Subject, number>,
       ),
-    [questions],
+    [mainQuestions],
   )
 
   const navigate = (nextView: View, subject?: Subject) => {
@@ -156,7 +166,7 @@ function App() {
   }
 
   const startSubjectQuiz = (settings: QuizSettings) => {
-    const pool = questions.filter((question) => {
+    const pool = mainQuestions.filter((question) => {
       if (settings.scope === 'random') return true
       if (question.subject !== settings.subject) return false
       return settings.scope === 'subject' || question.topic === settings.topic
@@ -173,9 +183,24 @@ function App() {
     })
   }
 
+  const startHardQuiz = (settings: HardQuizSettings) => {
+    const pool = hardQuestions.filter((question) => !settings.topic || question.topic === settings.topic)
+    const limit = settings.count === 'all' ? pool.length : Math.min(settings.count, pool.length)
+
+    setActiveQuiz({
+      mode: 'kt-hard',
+      questions: shuffle(pool).slice(0, limit),
+      showExplanation: settings.showExplanation,
+      index: 0,
+      answers: {},
+      checked: {},
+      finished: false,
+    })
+  }
+
   const startKtQuiz = (settings: KtSettings) => {
     const picked = SUBJECTS.flatMap((subject) => {
-      const pool = questions.filter((question) => question.subject === subject.id)
+      const pool = mainQuestions.filter((question) => question.subject === subject.id)
       return shuffle(pool).slice(0, Math.min(settings[subject.id], pool.length))
     })
 
@@ -283,12 +308,14 @@ function App() {
         )}
         {view === 'quiz' && (
           <SubjectQuizPage
-            activeQuiz={activeQuiz?.mode === 'subject' || activeQuiz?.mode === 'random' ? activeQuiz : null}
+            activeQuiz={activeQuiz?.mode === 'subject' || activeQuiz?.mode === 'random' || activeQuiz?.mode === 'kt-hard' ? activeQuiz : null}
             counts={counts}
-            questions={questions}
+            questions={mainQuestions}
+            hardQuestions={hardQuestions}
             selectedSubject={selectedSubject}
             onSettingsSubject={setSelectedSubject}
             onStart={startSubjectQuiz}
+            onHardStart={startHardQuiz}
             onAnswer={(id, answer) =>
               activeQuiz && setActiveQuiz({ ...activeQuiz, answers: { ...activeQuiz.answers, [id]: toggleAnswer(activeQuiz.answers[id], answer) } })
             }
@@ -674,9 +701,11 @@ function SubjectQuizPage({
   activeQuiz,
   counts,
   questions,
+  hardQuestions,
   selectedSubject,
   onSettingsSubject,
   onStart,
+  onHardStart,
   onAnswer,
   onCheck,
   onMove,
@@ -686,9 +715,11 @@ function SubjectQuizPage({
   activeQuiz: ActiveQuiz | null
   counts: Record<Subject, number>
   questions: Question[]
+  hardQuestions: Question[]
   selectedSubject: Subject
   onSettingsSubject: (subject: Subject) => void
   onStart: (settings: QuizSettings) => void
+  onHardStart: (settings: HardQuizSettings) => void
   onAnswer: (id: string, answer: AnswerKey) => void
   onCheck: (id: string) => void
   onMove: (index: number) => void
@@ -700,7 +731,15 @@ function SubjectQuizPage({
   const [scope, setScope] = useState<QuizScope>('topic')
   const topics = getTopics(questions, selectedSubject)
   const [topic, setTopic] = useState('')
+  const [hardTopic, setHardTopic] = useState('')
+  const [isHardTopicSelectOpen, setIsHardTopicSelectOpen] = useState(false)
+  const hardTopics = getTopics(hardQuestions, 'algorithms')
   const selectedTopic = topics.includes(topic) ? topic : (topics[0] ?? '')
+  const selectedHardTopic = hardTopics.includes(hardTopic) ? hardTopic : (hardTopics[0] ?? '')
+  const hardCount = hardQuestions.length
+  const hardTopicCount = selectedHardTopic
+    ? hardQuestions.filter((question) => question.topic === selectedHardTopic).length
+    : 0
   const poolCount = scope === 'random'
     ? questions.length
     : scope === 'subject'
@@ -752,6 +791,66 @@ function SubjectQuizPage({
           <Play size={18} /> Начать тест ({poolCount})
         </button>
       </section>
+      {selectedSubject === 'algorithms' && (
+        <section className="panel settings-panel hard-panel">
+          <div className="hard-panel-header">
+            <span className="badge hard-badge">КТ Hard</span>
+            <div>
+              <h2>КТ — сложная подготовка</h2>
+              <p>170 сложных вопросов по всей спецификации КТ</p>
+            </div>
+            <strong>{hardCount} вопросов</strong>
+          </div>
+          <div className="button-row">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!hardCount}
+              onClick={() => onHardStart({ count: 30, showExplanation })}
+            >
+              <Play size={18} /> Случайные 30
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!hardCount}
+              onClick={() => onHardStart({ count: 'all', showExplanation })}
+            >
+              <ListChecks size={18} /> Пройти все
+            </button>
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={!hardTopics.length}
+              onClick={() => setIsHardTopicSelectOpen(!isHardTopicSelectOpen)}
+            >
+              <ChevronDown size={18} /> Выбрать тему
+            </button>
+          </div>
+          {isHardTopicSelectOpen && (
+            <div className="hard-topic-picker">
+              <label>
+                Тема КТ Hard
+                <select value={selectedHardTopic} onChange={(event) => setHardTopic(event.target.value)}>
+                  <optgroup label="КТ Hard">
+                    {hardTopics.map((item) => (
+                      <option key={item} value={item}>{formatHardTopic(item)}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={!hardTopicCount}
+                onClick={() => onHardStart({ topic: selectedHardTopic, count: 'all', showExplanation })}
+              >
+                <Play size={18} /> Начать тему ({hardTopicCount})
+              </button>
+            </div>
+          )}
+        </section>
+      )}
     </>
   )
 }
@@ -1224,7 +1323,7 @@ function StatisticsPage({ results, onClear }: { results: TestResult[]; onClear: 
         <div className="history">
           {results.slice(0, 10).map((result) => (
             <div className="history-row" key={result.id}>
-              <strong>{result.mode === 'kt' ? 'Реальный КТ' : result.mode === 'random' ? 'Полный рандом' : 'Тренировка'}</strong>
+              <strong>{formatResultMode(result.mode)}</strong>
               <span>{new Date(result.date).toLocaleString('ru-RU')}</span>
               <span>{result.correctAnswers}/{result.totalQuestions}</span>
               <b>{result.percentage}%</b>
@@ -1318,6 +1417,21 @@ function getTopics(questions: Question[], subject: Subject) {
       .filter((question) => question.subject === subject)
       .map((question) => question.topic?.trim() || 'Без темы'),
   )].sort((left, right) => left.localeCompare(right, 'ru'))
+}
+
+function isAlgorithmsHardQuestion(question: Question) {
+  return question.subject === 'algorithms' && question.topic.trim().startsWith(ALGORITHMS_HARD_TOPIC_PREFIX)
+}
+
+function formatHardTopic(topic: string) {
+  return topic.trim().replace(ALGORITHMS_HARD_TOPIC_PREFIX, '').trim()
+}
+
+function formatResultMode(mode: QuizMode) {
+  if (mode === 'kt') return 'Реальный КТ'
+  if (mode === 'kt-hard') return 'КТ Hard'
+  if (mode === 'random') return 'Полный рандом'
+  return 'Тренировка'
 }
 
 function mergeQuestionsWithTopics(existing: Question[], incoming: Question[]) {

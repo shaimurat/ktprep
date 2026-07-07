@@ -15,7 +15,7 @@ export type Question = {
 
 export type TestResult = {
   id: string
-  mode: 'subject' | 'random' | 'kt'
+  mode: 'subject' | 'random' | 'kt' | 'kt-hard'
   date: string
   totalQuestions: number
   correctAnswers: number

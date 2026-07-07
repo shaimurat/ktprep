@@ -811,6 +811,44 @@ textarea {
   max-width: 760px;
 }
 
+.hard-panel {
+  margin-top: 18px;
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+}
+
+.hard-panel-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.hard-panel-header h2 {
+  margin-bottom: 6px;
+}
+
+.hard-panel-header p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.hard-panel-header > strong {
+  white-space: nowrap;
+  color: var(--danger);
+}
+
+.hard-badge {
+  background: #fff1f2;
+  color: var(--danger);
+}
+
+.hard-topic-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
