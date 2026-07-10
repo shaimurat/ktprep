@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties } from 'react'
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar'
 import 'react-circular-progressbar/dist/styles.css'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { ROUTE_PATHS, routeFromPathname, type AppRoute } from './app/routes'
+import { AppLayout } from './layouts/AppLayout'
+import { HomePage } from './pages/home/HomePage'
+import { SubjectsPage } from './pages/subjects/SubjectsPage'
 import {
   ArrowLeft,
   AlertTriangle,
-  BarChart3,
-  BookOpen,
   Braces,
   CalendarDays,
   Check,
@@ -16,17 +18,12 @@ import {
   Database,
   Edit3,
   FileText,
-  GraduationCap,
-  Home,
   Languages,
-  Layers3,
   ListChecks,
-  Moon,
   Play,
   Plus,
   RotateCcw,
   Search,
-  Sun,
   Trash2,
   X,
   XCircle,
@@ -36,17 +33,16 @@ import {
   jsonExample,
   normalizeQuestion,
   pseudocodeJsonExample,
-} from './features/questions/validation'
-import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './shared/answers'
-import { loadQuestions, loadResults, saveQuestions, saveResults } from './storage/apiStorage'
-import { useDatabaseState } from './storage/useDatabaseState'
-import { demoQuestions } from './shared/demoQuestions'
-import { emptyBySubject, SUBJECTS, subjectById } from './shared/subjects'
+} from './pages/questions/utils/validation'
+import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
+import { loadQuestions, loadResults, saveQuestions, saveResults } from './services/apiStorage'
+import { useDatabaseState } from './hooks/useDatabaseState'
+import { demoQuestions } from './models/demoQuestions'
+import { emptyBySubject, SUBJECTS, subjectById } from './models/subjects'
 import type { AnswerKey, Question, Subject, TestResult } from './types'
 import { createId } from './utils/id'
 import { shuffle } from './utils/shuffle'
 
-type View = 'home' | 'subjects' | 'add' | 'manage' | 'quiz' | 'kt' | 'stats'
 type QuizMode = 'subject' | 'random' | 'kt' | 'kt-hard'
 type QuizScope = 'topic' | 'subject' | 'random'
 type QuizSettings = {
@@ -64,20 +60,6 @@ type HardQuizSettings = {
 type KtSettings = Record<Subject, number>
 type AnswerMap = Record<string, AnswerKey[] | undefined>
 type Theme = 'light' | 'dark'
-
-const VIEW_PATHS: Record<View, string> = {
-  home: '/',
-  subjects: '/subjects',
-  add: '/questions/new',
-  manage: '/questions',
-  quiz: '/quiz',
-  kt: '/kt',
-  stats: '/statistics',
-}
-
-const PATH_VIEWS: Record<string, View> = Object.fromEntries(
-  Object.entries(VIEW_PATHS).map(([view, path]) => [path, view as View]),
-) as Record<string, View>
 
 const ALGORITHMS_HARD_TOPIC_PREFIX = 'КТ Hard —'
 
@@ -135,10 +117,10 @@ function App() {
   }, [theme])
 
   useEffect(() => {
-    if (!PATH_VIEWS[location.pathname]) routerNavigate(VIEW_PATHS.home, { replace: true })
+    if (!routeFromPathname(location.pathname)) routerNavigate(ROUTE_PATHS.home, { replace: true })
   }, [location.pathname, routerNavigate])
 
-  const view = PATH_VIEWS[location.pathname] ?? 'home'
+  const view = routeFromPathname(location.pathname) ?? 'home'
 
   const mainQuestions = useMemo(() => questions.filter((question) => !isAlgorithmsHardQuestion(question)), [questions])
   const hardQuestions = useMemo(() => questions.filter(isAlgorithmsHardQuestion), [questions])
@@ -155,10 +137,10 @@ function App() {
     [mainQuestions],
   )
 
-  const navigate = (nextView: View, subject?: Subject) => {
+  const navigate = (nextView: AppRoute, subject?: Subject) => {
     if (subject) setSelectedSubject(subject)
     setActiveQuiz(null)
-    routerNavigate(VIEW_PATHS[nextView])
+    routerNavigate(ROUTE_PATHS[nextView])
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -252,46 +234,12 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <button className="brand" type="button" onClick={() => navigate('home')}>
-          <GraduationCap size={28} />
-          <span>
-            <strong>KT Prep</strong>
-            <small>Trainer</small>
-          </span>
-        </button>
-        <nav>
-          <NavButton icon={<Home />} label="Главная" active={view === 'home'} onClick={() => navigate('home')} />
-          <NavButton icon={<BookOpen />} label="Предметы" active={view === 'subjects'} onClick={() => navigate('subjects')} />
-          <NavButton icon={<Plus />} label="Добавить" active={view === 'add'} onClick={() => navigate('add')} />
-          <NavButton icon={<ListChecks />} label="Вопросы" active={view === 'manage'} onClick={() => navigate('manage')} />
-          <NavButton icon={<Play />} label="Тест" active={view === 'quiz'} onClick={() => navigate('quiz')} />
-          <NavButton icon={<Layers3 />} label="Реальный КТ" active={view === 'kt'} onClick={() => navigate('kt')} />
-          <NavButton icon={<BarChart3 />} label="Статистика" active={view === 'stats'} onClick={() => navigate('stats')} />
-        </nav>
-        <button
-          className="theme-toggle"
-          type="button"
-          role="switch"
-          aria-checked={theme === 'dark'}
-          aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        >
-          <span className="theme-toggle-icon" aria-hidden="true">
-            {theme === 'dark' ? <Moon /> : <Sun />}
-          </span>
-          <span className="theme-toggle-label">
-            <strong>Тёмная тема</strong>
-            <small>{theme === 'dark' ? 'Включена' : 'Выключена'}</small>
-          </span>
-          <span className="theme-toggle-track" aria-hidden="true">
-            <span />
-          </span>
-        </button>
-      </aside>
-
-      <section className="workspace">
+    <AppLayout
+      activeRoute={view}
+      theme={theme}
+      onNavigate={navigate}
+      onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+    >
         {(questionsError || resultsError) && (
           <div className="database-error" role="alert">
             <AlertTriangle aria-hidden="true" />
@@ -366,27 +314,7 @@ function App() {
           />
         )}
         {view === 'stats' && <StatisticsPage results={results} onClear={() => setResults([])} />}
-      </section>
-    </main>
-  )
-}
-
-function NavButton({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: ReactNode
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button className={`nav-button ${active ? 'active' : ''}`} type="button" onClick={onClick}>
-      {icon}
-      <span>{label}</span>
-    </button>
+    </AppLayout>
   )
 }
 
@@ -398,109 +326,6 @@ function toggleAnswer(current: AnswerKey[] | undefined, answer: AnswerKey) {
   }
 
   return [...selected, answer].sort()
-}
-
-function HomePage({
-  counts,
-  totalQuestions,
-  totalResults,
-  onNavigate,
-}: {
-  counts: Record<Subject, number>
-  totalQuestions: number
-  totalResults: number
-  onNavigate: (view: View, subject?: Subject) => void
-}) {
-  return (
-    <>
-      <header className="hero-panel">
-        <div>
-          <span className="eyebrow">Учебный тренажер</span>
-          <h1>KT Prep Trainer</h1>
-          <p>
-            Готовься к КТ по четырем предметам: добавляй собственные вопросы, проходи короткие тесты
-            и запускай режим полного экзамена.
-          </p>
-          <div className="hero-actions">
-            <button className="primary-button" type="button" onClick={() => onNavigate('kt')}>
-              <Layers3 size={18} /> Пройти реальный КТ
-            </button>
-            <button className="secondary-button" type="button" onClick={() => onNavigate('add')}>
-              <Plus size={18} /> Добавить вопросы
-            </button>
-          </div>
-        </div>
-        <div className="hero-meter" aria-label="Сводка">
-          <div>
-            <strong>{totalQuestions}</strong>
-            <span>вопросов</span>
-          </div>
-          <div>
-            <strong>{totalResults}</strong>
-            <span>попыток</span>
-          </div>
-        </div>
-      </header>
-
-      <section className="section-header">
-        <div>
-          <h2>Предметы</h2>
-          <p>Выбери направление и начни тренировку.</p>
-        </div>
-        <button className="ghost-button" type="button" onClick={() => onNavigate('stats')}>
-          <BarChart3 size={18} /> Статистика
-        </button>
-      </section>
-      <SubjectGrid counts={counts} onNavigate={onNavigate} />
-    </>
-  )
-}
-
-function SubjectsPage({
-  counts,
-  onNavigate,
-}: {
-  counts: Record<Subject, number>
-  onNavigate: (view: View, subject?: Subject) => void
-}) {
-  return (
-    <>
-      <PageTitle title="Предметы" text="Отдельные страницы-карточки для каждого блока подготовки." />
-      <SubjectGrid counts={counts} onNavigate={onNavigate} />
-    </>
-  )
-}
-
-function SubjectGrid({
-  counts,
-  onNavigate,
-}: {
-  counts: Record<Subject, number>
-  onNavigate: (view: View, subject?: Subject) => void
-}) {
-  return (
-    <div className="subject-grid">
-      {SUBJECTS.map((subject) => (
-        <article className="card subject-card" key={subject.id} style={{ '--subject-color': subject.color } as CSSProperties}>
-          <div className="subject-icon"><Database size={20} /></div>
-          <h3>{subject.title}</h3>
-          <p>{subject.description}</p>
-          <strong>{counts[subject.id]} вопросов</strong>
-          <div className="card-actions">
-            <button className="primary-button" type="button" onClick={() => onNavigate('quiz', subject.id)}>
-              <Play size={16} /> Пройти тест
-            </button>
-            <button className="secondary-button" type="button" onClick={() => onNavigate('add', subject.id)}>
-              <Plus size={16} /> Добавить
-            </button>
-            <button className="ghost-button" type="button" onClick={() => onNavigate('manage', subject.id)}>
-              <ListChecks size={16} /> Вопросы
-            </button>
-          </div>
-        </article>
-      ))}
-    </div>
-  )
 }
 
 function AddQuestionsPage({

@@ -1,7 +1,7 @@
-import { SUBJECT_IDS } from '../../shared/subjects'
-import { ANSWER_KEYS } from '../../shared/answers'
-import type { AnswerKey, Question, Subject } from '../../types'
-import { createId } from '../../utils/id'
+import { SUBJECT_IDS } from '../../../models/subjects'
+import { ANSWER_KEYS } from '../../../utils/answers'
+import type { AnswerKey, Question, Subject } from '../../../types'
+import { createId } from '../../../utils/id'
 
 type RawQuestion = Partial<Omit<Question, 'id'>> & {
   id?: string

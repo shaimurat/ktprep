@@ -1,4 +1,4 @@
-import { demoQuestions } from '../shared/demoQuestions'
+import { demoQuestions } from '../models/demoQuestions'
 import type { Question, TestResult } from '../types'
 
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
