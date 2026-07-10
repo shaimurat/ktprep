@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar'
 import 'react-circular-progressbar/dist/styles.css'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   AlertTriangle,
@@ -64,6 +65,20 @@ type KtSettings = Record<Subject, number>
 type AnswerMap = Record<string, AnswerKey[] | undefined>
 type Theme = 'light' | 'dark'
 
+const VIEW_PATHS: Record<View, string> = {
+  home: '/',
+  subjects: '/subjects',
+  add: '/questions/new',
+  manage: '/questions',
+  quiz: '/quiz',
+  kt: '/kt',
+  stats: '/statistics',
+}
+
+const PATH_VIEWS: Record<string, View> = Object.fromEntries(
+  Object.entries(VIEW_PATHS).map(([view, path]) => [path, view as View]),
+) as Record<string, View>
+
 const ALGORITHMS_HARD_TOPIC_PREFIX = 'КТ Hard —'
 
 const defaultQuestionForm: Omit<Question, 'id'> = {
@@ -83,6 +98,8 @@ const defaultKtSettings: KtSettings = {
 }
 
 function App() {
+  const location = useLocation()
+  const routerNavigate = useNavigate()
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = localStorage.getItem('kt-theme')
     if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme
@@ -100,7 +117,6 @@ function App() {
     [],
     'Результаты тестов',
   )
-  const [view, setView] = useState<View>('home')
   const [selectedSubject, setSelectedSubject] = useState<Subject>('tgo')
   const [activeQuiz, setActiveQuiz] = useState<{
     mode: QuizMode
@@ -117,6 +133,12 @@ function App() {
     document.documentElement.style.colorScheme = theme
     localStorage.setItem('kt-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    if (!PATH_VIEWS[location.pathname]) routerNavigate(VIEW_PATHS.home, { replace: true })
+  }, [location.pathname, routerNavigate])
+
+  const view = PATH_VIEWS[location.pathname] ?? 'home'
 
   const mainQuestions = useMemo(() => questions.filter((question) => !isAlgorithmsHardQuestion(question)), [questions])
   const hardQuestions = useMemo(() => questions.filter(isAlgorithmsHardQuestion), [questions])
@@ -136,7 +158,7 @@ function App() {
   const navigate = (nextView: View, subject?: Subject) => {
     if (subject) setSelectedSubject(subject)
     setActiveQuiz(null)
-    setView(nextView)
+    routerNavigate(VIEW_PATHS[nextView])
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
