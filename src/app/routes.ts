@@ -1,4 +1,4 @@
-export type AppRoute = 'home' | 'subjects' | 'add' | 'manage' | 'quiz' | 'kt' | 'stats'
+export type AppRoute = 'home' | 'subjects' | 'add' | 'manage' | 'quiz' | 'kt' | 'stats' | 'profile' | 'admin'
 
 export const ROUTE_PATHS: Record<AppRoute, string> = {
   home: '/',
@@ -8,6 +8,8 @@ export const ROUTE_PATHS: Record<AppRoute, string> = {
   quiz: '/quiz',
   kt: '/kt',
   stats: '/statistics',
+  profile: '/profile',
+  admin: '/admin',
 }
 
 const pathRoutes = Object.entries(ROUTE_PATHS).map(([route, path]) => [path, route])

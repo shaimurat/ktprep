@@ -5,6 +5,7 @@ const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 const request = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(`${API_URL}/api/${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })

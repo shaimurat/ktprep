@@ -5,13 +5,17 @@ import {
   GraduationCap,
   Home,
   Layers3,
+  LogOut,
   ListChecks,
   Moon,
+  Shield,
   Play,
   Plus,
   Sun,
+  UserRound,
 } from 'lucide-react'
 import type { AppRoute } from '../app/routes'
+import type { AuthUser } from '../services/auth'
 
 type Theme = 'light' | 'dark'
 
@@ -21,9 +25,11 @@ type AppLayoutProps = {
   theme: Theme
   onNavigate: (route: AppRoute) => void
   onToggleTheme: () => void
+  user: AuthUser
+  onLogout: () => void
 }
 
-export function AppLayout({ children, activeRoute, theme, onNavigate, onToggleTheme }: AppLayoutProps) {
+export function AppLayout({ children, activeRoute, theme, onNavigate, onToggleTheme, user, onLogout }: AppLayoutProps) {
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -42,6 +48,8 @@ export function AppLayout({ children, activeRoute, theme, onNavigate, onToggleTh
           <NavigationButton icon={<Play />} label="Тест" active={activeRoute === 'quiz'} onClick={() => onNavigate('quiz')} />
           <NavigationButton icon={<Layers3 />} label="Реальный КТ" active={activeRoute === 'kt'} onClick={() => onNavigate('kt')} />
           <NavigationButton icon={<BarChart3 />} label="Статистика" active={activeRoute === 'stats'} onClick={() => onNavigate('stats')} />
+          <NavigationButton icon={<UserRound />} label="Профиль" active={activeRoute === 'profile'} onClick={() => onNavigate('profile')} />
+          {user.role === 'admin' && <NavigationButton icon={<Shield />} label="Админка" active={activeRoute === 'admin'} onClick={() => onNavigate('admin')} />}
         </nav>
         <button
           className="theme-toggle"
@@ -58,6 +66,11 @@ export function AppLayout({ children, activeRoute, theme, onNavigate, onToggleTh
           </span>
           <span className="theme-toggle-track" aria-hidden="true"><span /></span>
         </button>
+        <div className="profile-card">
+          <span className="profile-avatar" aria-hidden="true">{user.login.slice(0, 1).toUpperCase()}</span>
+          <div><strong>{user.login}</strong><small>Мой профиль</small></div>
+          <button className="profile-logout" type="button" onClick={onLogout} aria-label="Выйти из аккаунта"><LogOut size={17} /></button>
+        </div>
       </aside>
       <section className="workspace">{children}</section>
     </main>

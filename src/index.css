@@ -72,6 +72,57 @@ button:disabled {
   opacity: 0.55;
 }
 
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at top, rgba(37, 99, 235, 0.16), transparent 42%), var(--bg);
+}
+
+.auth-card {
+  display: grid;
+  width: min(100%, 430px);
+  gap: 16px;
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.auth-card h1 { font-size: 30px; }
+.auth-card > p:not(.eyebrow), .auth-hint { color: var(--muted); line-height: 1.5; }
+.auth-card label { display: grid; gap: 7px; font-weight: 700; }
+.auth-card input { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 11px 12px; }
+.auth-card input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.auth-logo { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 14px; color: white; background: var(--primary); }
+.auth-error { padding: 10px; border-radius: 8px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.auth-switch { border: 0; background: transparent; color: var(--primary); font-weight: 700; }
+
+.profile-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 9px; align-items: center; margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-soft); }
+.profile-card strong, .profile-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-card small { color: var(--muted); }
+.profile-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: white; font-weight: 800; background: var(--primary); }
+.profile-logout { display: grid; place-items: center; border: 0; border-radius: 6px; padding: 6px; color: var(--muted); background: transparent; }
+.profile-logout:hover { color: var(--danger); background: var(--panel); }
+
+.profile-page, .admin-page { display: grid; gap: 16px; }
+.profile-page h1, .admin-page h1 { font-size: clamp(36px, 5vw, 56px); }
+.password-form { display: grid; width: min(100%, 520px); gap: 14px; margin-top: 12px; }
+.password-form h2 { display: flex; gap: 8px; align-items: center; }
+.password-form label, .admin-user label { display: grid; gap: 6px; font-weight: 700; }
+.password-form input, .admin-user input, .admin-user select { border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--text); background: var(--bg); }
+.success-message { padding: 10px; border-radius: 8px; color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.admin-users { display: grid; gap: 12px; }
+.admin-user { display: grid; grid-template-columns: minmax(170px, 1fr) 160px minmax(170px, 1fr) auto auto; gap: 12px; align-items: end; }
+.admin-user strong, .admin-user small { display: block; }
+.admin-user small { margin-top: 5px; color: var(--muted); }
+
+@media (max-width: 980px) {
+  .admin-user { grid-template-columns: 1fr 1fr; }
+}
+
 h1,
 h2,
 h3,

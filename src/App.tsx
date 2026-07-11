@@ -5,6 +5,9 @@ import 'react-circular-progressbar/dist/styles.css'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ROUTE_PATHS, routeFromPathname, type AppRoute } from './app/routes'
 import { AppLayout } from './layouts/AppLayout'
+import { AdminPage } from './pages/admin/AdminPage'
+import { AuthPage } from './pages/auth/AuthPage'
+import { ProfilePage } from './pages/profile/ProfilePage'
 import { HomePage } from './pages/home/HomePage'
 import { SubjectsPage } from './pages/subjects/SubjectsPage'
 import {
@@ -36,6 +39,7 @@ import {
 } from './pages/questions/utils/validation'
 import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
 import { loadQuestions, loadResults, saveQuestions, saveResults } from './services/apiStorage'
+import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
 import { demoQuestions } from './models/demoQuestions'
 import { emptyBySubject, SUBJECTS, subjectById } from './models/subjects'
@@ -80,6 +84,19 @@ const defaultKtSettings: KtSettings = {
 }
 
 function App() {
+  const [user, setUser] = useState<AuthUser | null | undefined>(undefined)
+
+  useEffect(() => {
+    getCurrentUser().then(setUser).catch(() => setUser(null))
+  }, [])
+
+  if (user === undefined) return <main className="auth-shell"><p>Загрузка…</p></main>
+  if (!user) return <AuthPage onAuthenticated={setUser} />
+
+  return <AuthenticatedApp user={user} onLogout={() => logout().finally(() => setUser(null))} />
+}
+
+function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const location = useLocation()
   const routerNavigate = useNavigate()
   const [theme, setTheme] = useState<Theme>(() => {
@@ -239,6 +256,8 @@ function App() {
       theme={theme}
       onNavigate={navigate}
       onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      user={user}
+      onLogout={onLogout}
     >
         {(questionsError || resultsError) && (
           <div className="database-error" role="alert">
@@ -314,6 +333,8 @@ function App() {
           />
         )}
         {view === 'stats' && <StatisticsPage results={results} onClear={() => setResults([])} />}
+        {view === 'profile' && <ProfilePage user={user} />}
+        {view === 'admin' && user.role === 'admin' && <AdminPage currentUser={user} />}
     </AppLayout>
   )
 }
