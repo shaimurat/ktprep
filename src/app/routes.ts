@@ -1,4 +1,4 @@
-export type AppRoute = 'home' | 'subjects' | 'add' | 'manage' | 'quiz' | 'kt' | 'stats' | 'profile' | 'admin'
+export type AppRoute = 'home' | 'subjects' | 'add' | 'manage' | 'quiz' | 'kt' | 'stats' | 'profile' | 'leaderboard' | 'admin'
 
 export const ROUTE_PATHS: Record<AppRoute, string> = {
   home: '/',
@@ -9,6 +9,7 @@ export const ROUTE_PATHS: Record<AppRoute, string> = {
   kt: '/kt',
   stats: '/statistics',
   profile: '/profile',
+  leaderboard: '/leaderboard',
   admin: '/admin',
 }
 

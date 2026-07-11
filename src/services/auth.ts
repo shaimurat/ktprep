@@ -2,6 +2,10 @@ export type AuthUser = {
   id: string
   login: string
   role: 'user' | 'admin'
+  displayName: string | null
+  avatarUrl: string | null
+  goalScore: number | null
+  selectedSubjects: string[]
   createdAt: string
 }
 
@@ -28,3 +32,5 @@ export const login = (loginValue: string, password: string) =>
 export const logout = () => authRequest<void>('logout', { method: 'POST' })
 export const changePassword = (currentPassword: string, newPassword: string) =>
   authRequest<void>('password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) })
+export const updateProfile = (profile: Pick<AuthUser, 'displayName' | 'avatarUrl' | 'goalScore' | 'selectedSubjects'>) =>
+  authRequest<AuthUser>('profile', { method: 'PATCH', body: JSON.stringify(profile) })

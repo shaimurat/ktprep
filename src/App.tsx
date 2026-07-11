@@ -8,6 +8,7 @@ import { AppLayout } from './layouts/AppLayout'
 import { AdminPage } from './pages/admin/AdminPage'
 import { AuthPage } from './pages/auth/AuthPage'
 import { ProfilePage } from './pages/profile/ProfilePage'
+import { LeaderboardPage } from './pages/leaderboard/LeaderboardPage'
 import { HomePage } from './pages/home/HomePage'
 import { SubjectsPage } from './pages/subjects/SubjectsPage'
 import {
@@ -43,7 +44,7 @@ import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
 import { demoQuestions } from './models/demoQuestions'
 import { emptyBySubject, SUBJECTS, subjectById } from './models/subjects'
-import type { AnswerKey, Question, Subject, TestResult } from './types'
+import type { AnswerKey, Question, QuestionAttempt, Subject, TestResult } from './types'
 import { createId } from './utils/id'
 import { shuffle } from './utils/shuffle'
 
@@ -93,10 +94,10 @@ function App() {
   if (user === undefined) return <main className="auth-shell"><p>Загрузка…</p></main>
   if (!user) return <AuthPage onAuthenticated={setUser} />
 
-  return <AuthenticatedApp user={user} onLogout={() => logout().finally(() => setUser(null))} />
+  return <AuthenticatedApp user={user} onUserChange={setUser} onLogout={() => logout().finally(() => setUser(null))} />
 }
 
-function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; onLogout: () => void; onUserChange: (user: AuthUser) => void }) {
   const location = useLocation()
   const routerNavigate = useNavigate()
   const [theme, setTheme] = useState<Theme>(() => {
@@ -165,12 +166,14 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const bySubject = emptyBySubject()
     let correctAnswers = 0
 
-    quizQuestions.forEach((question) => {
+    const questionAttempts: QuestionAttempt[] = quizQuestions.map((question) => {
+      const correct = answersMatch(answers[question.id], getCorrectAnswers(question))
       bySubject[question.subject].total += 1
-      if (answersMatch(answers[question.id], getCorrectAnswers(question))) {
+      if (correct) {
         bySubject[question.subject].correct += 1
         correctAnswers += 1
       }
+      return { questionId: question.id, subject: question.subject, topic: question.topic || 'Без темы', correct }
     })
 
     const result: TestResult = {
@@ -181,6 +184,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
       correctAnswers,
       percentage: quizQuestions.length ? Math.round((correctAnswers / quizQuestions.length) * 100) : 0,
       bySubject,
+      questionAttempts,
     }
 
     setResults([result, ...results].slice(0, 50))
@@ -333,7 +337,8 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           />
         )}
         {view === 'stats' && <StatisticsPage results={results} onClear={() => setResults([])} />}
-        {view === 'profile' && <ProfilePage user={user} />}
+        {view === 'profile' && <ProfilePage user={user} onUserUpdate={onUserChange} />}
+        {view === 'leaderboard' && <LeaderboardPage currentUser={user} />}
         {view === 'admin' && user.role === 'admin' && <AdminPage currentUser={user} />}
     </AppLayout>
   )
@@ -1160,48 +1165,80 @@ function highlightPseudocode(line: string) {
 function StatisticsPage({ results, onClear }: { results: TestResult[]; onClear: () => void }) {
   const average = results.length ? Math.round(results.reduce((sum, result) => sum + result.percentage, 0) / results.length) : 0
   const best = results.length ? Math.max(...results.map((result) => result.percentage)) : 0
+  const totalAnswered = results.reduce((sum, result) => sum + result.totalQuestions, 0)
+  const subjectStats = SUBJECTS.map((subject) => {
+    const totals = results.reduce(
+      (acc, result) => {
+        acc.total += result.bySubject[subject.id]?.total ?? 0
+        acc.correct += result.bySubject[subject.id]?.correct ?? 0
+        return acc
+      },
+      { total: 0, correct: 0 },
+    )
+    return { ...subject, ...totals, percent: totals.total ? Math.round((totals.correct / totals.total) * 100) : 0 }
+  })
+  const topicStats = Object.values(results.flatMap((result) => result.questionAttempts ?? []).reduce<Record<string, { topic: string; total: number; correct: number }>>((acc, attempt) => {
+    const key = `${attempt.subject}:${attempt.topic}`
+    const current = acc[key] ?? { topic: attempt.topic, total: 0, correct: 0 }
+    current.total += 1
+    current.correct += Number(attempt.correct)
+    acc[key] = current
+    return acc
+  }, {}))
+    .map((topic) => ({ ...topic, percent: Math.round((topic.correct / topic.total) * 100) }))
+    .sort((a, b) => a.percent - b.percent || b.total - a.total)
+    .slice(0, 4)
+  const trend = [...results].reverse().slice(-10)
 
   return (
-    <>
-      <PageTitle title="Статистика" text="Прогресс хранится в общей базе данных." />
-      <section className="stats-grid">
-        <Metric title="Тестов пройдено" value={String(results.length)} />
-        <Metric title="Средний процент" value={`${average}%`} />
+    <section className="analytics-page">
+      <div className="analytics-heading">
+        <div><p className="eyebrow">Мой прогресс</p><h1>Аналитика</h1><p>Смотри динамику, закрепляй сильные темы и повторяй слабые.</p></div>
+        <button className="danger-button" type="button" onClick={onClear}>Очистить историю</button>
+      </div>
+      <section className="analytics-kpis">
+        <Metric title="Пройдено тестов" value={String(results.length)} />
+        <Metric title="Средний результат" value={`${average}%`} />
         <Metric title="Лучший результат" value={`${best}%`} />
+        <Metric title="Решено вопросов" value={String(totalAnswered)} />
       </section>
-      <section className="subject-grid compact">
-        {SUBJECTS.map((subject) => {
-          const totals = results.reduce(
-            (acc, result) => {
-              acc.total += result.bySubject[subject.id]?.total ?? 0
-              acc.correct += result.bySubject[subject.id]?.correct ?? 0
-              return acc
-            },
-            { total: 0, correct: 0 },
-          )
-          const percent = totals.total ? Math.round((totals.correct / totals.total) * 100) : 0
-          return <Metric key={subject.id} title={subject.title} value={`${percent}%`} />
-        })}
+      <section className="analytics-main-grid">
+        <article className="analytics-surface trend-card">
+          <div className="analytics-card-heading"><div><h2>Динамика результатов</h2><p>Последние {trend.length || 0} попыток</p></div><strong>{trend.length ? `${trend.at(-1)?.percentage}%` : '—'}</strong></div>
+          {trend.length ? <ProgressLine results={trend} /> : <EmptyState text="Пройди первый тест — здесь появится график." />}
+        </article>
+        <article className="analytics-surface">
+          <div className="analytics-card-heading"><div><h2>Слабые темы</h2><p>Начни повторение с них</p></div></div>
+          <div className="weak-topic-list">
+            {topicStats.map((topic) => <div className="weak-topic" key={topic.topic}><div><strong>{topic.topic}</strong><span>{topic.correct} из {topic.total} правильных</span></div><b>{topic.percent}%</b></div>)}
+            {!topicStats.length && <EmptyState text="После новых попыток здесь появятся темы." />}
+          </div>
+        </article>
       </section>
-      <section className="panel">
-        <div className="split-title">
-          <h2>Последние попытки</h2>
-          <button className="danger-button" type="button" onClick={onClear}>Очистить</button>
+      <section className="analytics-surface subject-performance">
+        <div className="analytics-card-heading"><div><h2>Результаты по предметам</h2><p>Процент верных ответов за всё время</p></div></div>
+        <div className="subject-performance-list">
+          {subjectStats.map((subject) => <div className="subject-performance-row" key={subject.id}><span className="subject-dot" style={{ background: subject.color }} /><strong>{subject.title}</strong><div className="subject-bar"><span style={{ width: `${subject.percent}%`, background: subject.color }} /></div><b>{subject.percent}%</b><small>{subject.total} вопросов</small></div>)}
         </div>
-        <div className="history">
-          {results.slice(0, 10).map((result) => (
-            <div className="history-row" key={result.id}>
-              <strong>{formatResultMode(result.mode)}</strong>
-              <span>{new Date(result.date).toLocaleString('ru-RU')}</span>
-              <span>{result.correctAnswers}/{result.totalQuestions}</span>
-              <b>{result.percentage}%</b>
-            </div>
-          ))}
+      </section>
+      <section className="analytics-surface">
+        <div className="analytics-card-heading"><div><h2>Последние попытки</h2><p>История твоих тестов</p></div></div>
+        <div className="history analytics-history">
+          {results.slice(0, 10).map((result) => <div className="history-row" key={result.id}><strong>{formatResultMode(result.mode)}</strong><span>{new Date(result.date).toLocaleString('ru-RU')}</span><span>{result.correctAnswers}/{result.totalQuestions}</span><b>{result.percentage}%</b></div>)}
           {!results.length && <EmptyState text="История пока пустая." />}
         </div>
       </section>
-    </>
+    </section>
   )
+}
+
+function ProgressLine({ results }: { results: TestResult[] }) {
+  const points = results.map((result, index) => {
+    const x = results.length === 1 ? 50 : (index / (results.length - 1)) * 100
+    const y = 100 - result.percentage
+    return `${x},${y}`
+  }).join(' ')
+  return <div className="progress-line" aria-label="График динамики результатов"><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img"><line x1="0" y1="25" x2="100" y2="25" /><line x1="0" y1="50" x2="100" y2="50" /><line x1="0" y1="75" x2="100" y2="75" /><polyline points={points} /></svg><div className="progress-line-labels"><span>{new Date(results[0].date).toLocaleDateString('ru-RU')}</span><span>{new Date(results.at(-1)?.date ?? '').toLocaleDateString('ru-RU')}</span></div></div>
 }
 
 function QuestionEditor({

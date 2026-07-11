@@ -5,6 +5,7 @@ import {
   GraduationCap,
   Home,
   Layers3,
+  Trophy,
   LogOut,
   ListChecks,
   Moon,
@@ -49,6 +50,7 @@ export function AppLayout({ children, activeRoute, theme, onNavigate, onToggleTh
           <NavigationButton icon={<Layers3 />} label="Реальный КТ" active={activeRoute === 'kt'} onClick={() => onNavigate('kt')} />
           <NavigationButton icon={<BarChart3 />} label="Статистика" active={activeRoute === 'stats'} onClick={() => onNavigate('stats')} />
           <NavigationButton icon={<UserRound />} label="Профиль" active={activeRoute === 'profile'} onClick={() => onNavigate('profile')} />
+          <NavigationButton icon={<Trophy />} label="Рейтинг" active={activeRoute === 'leaderboard'} onClick={() => onNavigate('leaderboard')} />
           {user.role === 'admin' && <NavigationButton icon={<Shield />} label="Админка" active={activeRoute === 'admin'} onClick={() => onNavigate('admin')} />}
         </nav>
         <button

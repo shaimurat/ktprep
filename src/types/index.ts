@@ -27,6 +27,14 @@ export type TestResult = {
       correct: number
     }
   >
+  questionAttempts?: QuestionAttempt[]
+}
+
+export type QuestionAttempt = {
+  questionId: string
+  subject: Subject
+  topic: string
+  correct: boolean
 }
 
 export type SubjectInfo = {

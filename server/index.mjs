@@ -78,11 +78,24 @@ const schemaReady = pool.query(`
   CREATE INDEX IF NOT EXISTS test_results_user_id_idx ON test_results (user_id);
   CREATE INDEX IF NOT EXISTS user_sessions_token_hash_idx ON user_sessions (token_hash);
   ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_score INTEGER;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS selected_subjects JSONB NOT NULL DEFAULT '[]'::jsonb;
 `)
 
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 14
 const hashSessionToken = (token) => createHash('sha256').update(token).digest('hex')
-const publicUser = (user) => ({ id: user.id, login: user.login, role: user.role, createdAt: user.created_at })
+const publicUser = (user) => ({
+  id: user.id,
+  login: user.login,
+  role: user.role,
+  displayName: user.display_name,
+  avatarUrl: user.avatar_url,
+  goalScore: user.goal_score,
+  selectedSubjects: user.selected_subjects ?? [],
+  createdAt: user.created_at,
+})
 
 const parseCookies = (header = '') =>
   Object.fromEntries(header.split(';').map((item) => item.trim().split(/=(.*)/s, 2)).filter(([key]) => key))
@@ -120,7 +133,7 @@ const currentUser = async (req) => {
   const token = parseCookies(req.headers.cookie).ktprep_session
   if (!token) return null
   const { rows } = await pool.query(
-    `SELECT u.id, u.login, u.role, u.created_at
+    `SELECT u.id, u.login, u.role, u.display_name, u.avatar_url, u.goal_score, u.selected_subjects, u.created_at
        FROM user_sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.expires_at > now()`,
@@ -171,7 +184,7 @@ app.post('/api/auth/register', async (req, res, next) => {
     await schemaReady
     const passwordHash = await hashPassword(password)
     const { rows } = await pool.query(
-      'INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id, login, role, created_at',
+      'INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, created_at',
       [login, passwordHash],
     )
     const token = randomBytes(32).toString('base64url')
@@ -232,6 +245,55 @@ app.post('/api/auth/password', async (req, res, next) => {
     }
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [await hashPassword(newPassword), user.id])
     res.sendStatus(204)
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.patch('/api/auth/profile', async (req, res, next) => {
+  try {
+    const user = await requireUser(req, res)
+    if (!user) return
+    const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : ''
+    const avatarUrl = typeof req.body?.avatarUrl === 'string' ? req.body.avatarUrl.trim() : ''
+    const goalScore = Number(req.body?.goalScore)
+    const selectedSubjects = Array.isArray(req.body?.selectedSubjects) ? req.body.selectedSubjects : []
+    const validSubjects = ['tgo', 'english', 'databases', 'algorithms']
+    if (displayName.length > 50) return res.status(400).json({ error: 'Имя должно быть не длиннее 50 символов.' })
+    if (avatarUrl && (!/^https:\/\//.test(avatarUrl) || avatarUrl.length > 500)) return res.status(400).json({ error: 'Укажи корректную HTTPS-ссылку на аватар.' })
+    if (!Number.isInteger(goalScore) || goalScore < 0 || goalScore > 140) return res.status(400).json({ error: 'Цель должна быть числом от 0 до 140.' })
+    if (!selectedSubjects.every((subject) => validSubjects.includes(subject))) return res.status(400).json({ error: 'Некорректный предмет.' })
+    const { rows } = await pool.query(
+      `UPDATE users SET display_name = $1, avatar_url = $2, goal_score = $3, selected_subjects = $4::jsonb
+       WHERE id = $5
+       RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, created_at`,
+      [displayName || null, avatarUrl || null, goalScore, JSON.stringify([...new Set(selectedSubjects)]), user.id],
+    )
+    res.json(publicUser(rows[0]))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/leaderboard', async (req, res, next) => {
+  try {
+    const period = ['all', 'week', 'month'].includes(req.query.period) ? req.query.period : 'all'
+    await schemaReady
+    const { rows } = await pool.query(
+      `SELECT u.id, u.login, u.display_name, u.avatar_url,
+              count(r.id)::int AS attempts,
+              coalesce(sum((r.data->>'correctAnswers')::int), 0)::int AS points,
+              coalesce(round(avg((r.data->>'percentage')::numeric)), 0)::int AS average
+         FROM users u
+         LEFT JOIN test_results r ON r.user_id = u.id
+           AND ($1 = 'all' OR (r.data->>'date')::timestamptz >= CASE WHEN $1 = 'week' THEN date_trunc('week', now()) ELSE date_trunc('month', now()) END)
+        GROUP BY u.id
+       HAVING count(r.id) > 0
+        ORDER BY points DESC, average DESC, attempts DESC, u.created_at ASC
+        LIMIT 50`,
+      [period],
+    )
+    res.json(rows.map((row, index) => ({ id: row.id, login: row.login, displayName: row.display_name, avatarUrl: row.avatar_url, attempts: row.attempts, points: row.points, average: row.average, rank: index + 1 })))
   } catch (error) {
     next(error)
   }
