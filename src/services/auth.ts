@@ -6,6 +6,7 @@ export type AuthUser = {
   avatarUrl: string | null
   goalScore: number | null
   selectedSubjects: string[]
+  attemptsRemaining: number
   createdAt: string
 }
 

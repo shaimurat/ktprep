@@ -82,6 +82,16 @@ const schemaReady = pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_score INTEGER;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS selected_subjects JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS attempts_remaining INTEGER NOT NULL DEFAULT 1;
+  UPDATE users SET attempts_remaining = 1 WHERE attempts_remaining IS NULL OR attempts_remaining < 0;
+
+  DELETE FROM user_sessions
+   WHERE id NOT IN (
+     SELECT DISTINCT ON (user_id) id
+       FROM user_sessions
+      ORDER BY user_id, created_at DESC, id DESC
+   );
+  CREATE UNIQUE INDEX IF NOT EXISTS user_sessions_user_id_idx ON user_sessions (user_id);
 `)
 
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 14
@@ -94,6 +104,7 @@ const publicUser = (user) => ({
   avatarUrl: user.avatar_url,
   goalScore: user.goal_score,
   selectedSubjects: user.selected_subjects ?? [],
+  attemptsRemaining: user.attempts_remaining,
   createdAt: user.created_at,
 })
 
@@ -133,7 +144,7 @@ const currentUser = async (req) => {
   const token = parseCookies(req.headers.cookie).ktprep_session
   if (!token) return null
   const { rows } = await pool.query(
-    `SELECT u.id, u.login, u.role, u.display_name, u.avatar_url, u.goal_score, u.selected_subjects, u.created_at
+    `SELECT u.id, u.login, u.role, u.display_name, u.avatar_url, u.goal_score, u.selected_subjects, u.attempts_remaining, u.created_at
        FROM user_sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.expires_at > now()`,
@@ -184,12 +195,13 @@ app.post('/api/auth/register', async (req, res, next) => {
     await schemaReady
     const passwordHash = await hashPassword(password)
     const { rows } = await pool.query(
-      'INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, created_at',
+      'INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, attempts_remaining, created_at',
       [login, passwordHash],
     )
     const token = randomBytes(32).toString('base64url')
     await pool.query(
-      'INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)',
+      `INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)
+       ON CONFLICT (user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = now()`,
       [rows[0].id, hashSessionToken(token), `${SESSION_DURATION_SECONDS} seconds`],
     )
     setSessionCookie(req, res, token)
@@ -211,7 +223,8 @@ app.post('/api/auth/login', async (req, res, next) => {
     }
     const token = randomBytes(32).toString('base64url')
     await pool.query(
-      'INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)',
+      `INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)
+       ON CONFLICT (user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = now()`,
       [rows[0].id, hashSessionToken(token), `${SESSION_DURATION_SECONDS} seconds`],
     )
     setSessionCookie(req, res, token)
@@ -266,7 +279,7 @@ app.patch('/api/auth/profile', async (req, res, next) => {
     const { rows } = await pool.query(
       `UPDATE users SET display_name = $1, avatar_url = $2, goal_score = $3, selected_subjects = $4::jsonb
        WHERE id = $5
-       RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, created_at`,
+       RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, attempts_remaining, created_at`,
       [displayName || null, avatarUrl || null, goalScore, JSON.stringify([...new Set(selectedSubjects)]), user.id],
     )
     res.json(publicUser(rows[0]))
@@ -302,7 +315,7 @@ app.get('/api/leaderboard', async (req, res, next) => {
 app.get('/api/admin/users', async (req, res, next) => {
   try {
     if (!await requireAdmin(req, res)) return
-    const { rows } = await pool.query('SELECT id, login, role, created_at FROM users ORDER BY created_at DESC')
+    const { rows } = await pool.query('SELECT id, login, role, attempts_remaining, created_at FROM users ORDER BY created_at DESC')
     res.json(rows.map(publicUser))
   } catch (error) {
     next(error)
@@ -321,8 +334,25 @@ app.patch('/api/admin/users/:id/role', async (req, res, next) => {
       if (rows[0].count < 2) return res.status(400).json({ error: 'В проекте должен остаться хотя бы один администратор.' })
     }
     const { rows } = await pool.query(
-      'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, login, role, created_at',
+      'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, login, role, attempts_remaining, created_at',
       [role, req.params.id],
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Пользователь не найден.' })
+    res.json(publicUser(rows[0]))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/admin/users/:id/attempts', async (req, res, next) => {
+  try {
+    if (!await requireAdmin(req, res)) return
+    const { rows } = await pool.query(
+      `UPDATE users
+          SET attempts_remaining = attempts_remaining + 1
+        WHERE id = $1
+      RETURNING id, login, role, attempts_remaining, created_at`,
+      [req.params.id],
     )
     if (!rows[0]) return res.status(404).json({ error: 'Пользователь не найден.' })
     res.json(publicUser(rows[0]))
@@ -421,24 +451,35 @@ app.get('/api/results', async (req, res, next) => {
   }
 })
 
-app.put('/api/results', async (req, res, next) => {
-  if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected a JSON array' })
+app.post('/api/results', async (req, res, next) => {
   let client
   try {
     const user = await requireUser(req, res)
     if (!user) return
+    const result = req.body
+    if (!result?.id || typeof result.id !== 'string' || !['subject', 'random', 'kt', 'kt-hard'].includes(result.mode)) {
+      return res.status(400).json({ error: 'Некорректный результат теста.' })
+    }
     client = await pool.connect()
     await client.query('BEGIN')
-    await client.query('DELETE FROM test_results WHERE user_id = $1', [user.id])
-    for (const [position, item] of req.body.entries()) {
-      if (!item?.id || typeof item.id !== 'string') throw new Error('Every item must have a string id')
-      await client.query(
-        'INSERT INTO test_results (id, data, position, user_id) VALUES ($1, $2::jsonb, $3, $4)',
-        [item.id, JSON.stringify(item), position, user.id],
-      )
+    const updated = await client.query(
+      `UPDATE users
+          SET attempts_remaining = attempts_remaining - 1
+        WHERE id = $1 AND attempts_remaining > 0
+      RETURNING attempts_remaining`,
+      [user.id],
+    )
+    if (!updated.rows[0]) {
+      await client.query('ROLLBACK')
+      return res.status(403).json({ error: 'Попытка уже использована. Обратитесь к администратору, чтобы открыть пересдачу.' })
     }
+    const position = await client.query('SELECT coalesce(max(position), -1) + 1 AS position FROM test_results WHERE user_id = $1', [user.id])
+    await client.query(
+      'INSERT INTO test_results (id, data, position, user_id) VALUES ($1, $2::jsonb, $3, $4)',
+      [result.id, JSON.stringify(result), position.rows[0].position, user.id],
+    )
     await client.query('COMMIT')
-    res.sendStatus(204)
+    res.status(201).json({ result, attemptsRemaining: updated.rows[0].attempts_remaining })
   } catch (error) {
     if (client) await client.query('ROLLBACK')
     next(error)

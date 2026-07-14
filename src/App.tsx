@@ -39,7 +39,7 @@ import {
   pseudocodeJsonExample,
 } from './pages/questions/utils/validation'
 import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
-import { loadQuestions, loadResults, saveQuestions, saveResults } from './services/apiStorage'
+import { loadQuestions, loadResults, saveQuestions, submitResult } from './services/apiStorage'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
 import { demoQuestions } from './models/demoQuestions'
@@ -111,12 +111,10 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     demoQuestions,
     'Новые вопросы',
   )
-  const [results, setResults, resultsError] = useDatabaseState<TestResult[]>(
-    loadResults,
-    saveResults,
-    [],
-    'Результаты тестов',
-  )
+  const [results, setResults] = useState<TestResult[]>([])
+  const [resultsError, setResultsError] = useState('')
+  const [quizError, setQuizError] = useState('')
+  const [isFinishingQuiz, setIsFinishingQuiz] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<Subject>('tgo')
   const [activeQuiz, setActiveQuiz] = useState<{
     mode: QuizMode
@@ -133,6 +131,10 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     document.documentElement.style.colorScheme = theme
     localStorage.setItem('kt-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    loadResults().then(setResults).catch(() => setResultsError('Не удалось загрузить результаты тестов.'))
+  }, [])
 
   useEffect(() => {
     if (!routeFromPathname(location.pathname)) routerNavigate(ROUTE_PATHS.home, { replace: true })
@@ -162,7 +164,7 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const saveResult = (mode: QuizMode, quizQuestions: Question[], answers: AnswerMap) => {
+  const saveResult = async (mode: QuizMode, quizQuestions: Question[], answers: AnswerMap) => {
     const bySubject = emptyBySubject()
     let correctAnswers = 0
 
@@ -187,10 +189,20 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
       questionAttempts,
     }
 
-    setResults([result, ...results].slice(0, 50))
+    const saved = await submitResult(result)
+    setResults((current) => [saved.result, ...current].slice(0, 50))
+    onUserChange({ ...user, attemptsRemaining: saved.attemptsRemaining })
+  }
+
+  const canStartQuiz = () => {
+    if (user.attemptsRemaining > 0) return true
+    setQuizError('Ваша попытка использована. Обратитесь к администратору, чтобы он открыл пересдачу.')
+    return false
   }
 
   const startSubjectQuiz = (settings: QuizSettings) => {
+    if (!canStartQuiz()) return
+    setQuizError('')
     const pool = mainQuestions.filter((question) => {
       if (settings.scope === 'random') return true
       if (question.subject !== settings.subject) return false
@@ -209,6 +221,8 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   }
 
   const startHardQuiz = (settings: HardQuizSettings) => {
+    if (!canStartQuiz()) return
+    setQuizError('')
     const pool = hardQuestions.filter((question) => !settings.topic || question.topic === settings.topic)
     const limit = settings.count === 'all' ? pool.length : Math.min(settings.count, pool.length)
 
@@ -224,6 +238,8 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   }
 
   const startKtQuiz = (settings: KtSettings) => {
+    if (!canStartQuiz()) return
+    setQuizError('')
     const picked = SUBJECTS.flatMap((subject) => {
       const pool = mainQuestions.filter((question) => question.subject === subject.id)
       return shuffle(pool).slice(0, Math.min(settings[subject.id], pool.length))
@@ -240,10 +256,18 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     })
   }
 
-  const finishQuiz = () => {
+  const finishQuiz = async () => {
     if (!activeQuiz || activeQuiz.finished) return
-    saveResult(activeQuiz.mode, activeQuiz.questions, activeQuiz.answers)
-    setActiveQuiz({ ...activeQuiz, finished: true })
+    setIsFinishingQuiz(true)
+    setQuizError('')
+    try {
+      await saveResult(activeQuiz.mode, activeQuiz.questions, activeQuiz.answers)
+      setActiveQuiz({ ...activeQuiz, finished: true })
+    } catch (error) {
+      setQuizError(error instanceof Error ? error.message : 'Не удалось завершить тест.')
+    } finally {
+      setIsFinishingQuiz(false)
+    }
   }
 
   if (activeQuiz?.finished) {
@@ -263,12 +287,12 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
       user={user}
       onLogout={onLogout}
     >
-        {(questionsError || resultsError) && (
+        {(questionsError || resultsError || quizError) && (
           <div className="database-error" role="alert">
             <AlertTriangle aria-hidden="true" />
             <div>
               <strong>Ошибка базы данных</strong>
-              <span>{questionsError || resultsError}</span>
+              <span>{questionsError || resultsError || quizError}</span>
             </div>
           </div>
         )}
@@ -317,6 +341,7 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
             }
             onMove={(index) => activeQuiz && setActiveQuiz({ ...activeQuiz, index })}
             onFinish={finishQuiz}
+            isFinishing={isFinishingQuiz}
             onReset={() => setActiveQuiz(null)}
           />
         )}
@@ -333,10 +358,11 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
             }
             onMove={(index) => activeQuiz && setActiveQuiz({ ...activeQuiz, index })}
             onFinish={finishQuiz}
+            isFinishing={isFinishingQuiz}
             onReset={() => setActiveQuiz(null)}
           />
         )}
-        {view === 'stats' && <StatisticsPage results={results} onClear={() => setResults([])} />}
+        {view === 'stats' && <StatisticsPage results={results} />}
         {view === 'profile' && <ProfilePage user={user} onUserUpdate={onUserChange} />}
         {view === 'leaderboard' && <LeaderboardPage currentUser={user} />}
         {view === 'admin' && user.role === 'admin' && <AdminPage currentUser={user} />}
@@ -583,6 +609,7 @@ function SubjectQuizPage({
   onCheck,
   onMove,
   onFinish,
+  isFinishing,
   onReset,
 }: {
   activeQuiz: ActiveQuiz | null
@@ -597,6 +624,7 @@ function SubjectQuizPage({
   onCheck: (id: string) => void
   onMove: (index: number) => void
   onFinish: () => void
+  isFinishing: boolean
   onReset: () => void
 }) {
   const [count, setCount] = useState<QuizSettings['count']>(10)
@@ -620,7 +648,7 @@ function SubjectQuizPage({
       : questions.filter((question) => question.subject === selectedSubject && question.topic === selectedTopic).length
 
   if (activeQuiz) {
-    return <QuizRunner quiz={activeQuiz} onAnswer={onAnswer} onCheck={onCheck} onMove={onMove} onFinish={onFinish} onReset={onReset} />
+    return <QuizRunner quiz={activeQuiz} onAnswer={onAnswer} onCheck={onCheck} onMove={onMove} onFinish={onFinish} onReset={onReset} isFinishing={isFinishing} />
   }
 
   return (
@@ -746,6 +774,7 @@ function KtModePage({
   onCheck,
   onMove,
   onFinish,
+  isFinishing,
   onReset,
 }: {
   activeQuiz: ActiveQuiz | null
@@ -755,12 +784,13 @@ function KtModePage({
   onCheck: (id: string) => void
   onMove: (index: number) => void
   onFinish: () => void
+  isFinishing: boolean
   onReset: () => void
 }) {
   const [settings, setSettings] = useState(defaultKtSettings)
 
   if (activeQuiz) {
-    return <QuizRunner quiz={activeQuiz} onAnswer={onAnswer} onCheck={onCheck} onMove={onMove} onFinish={onFinish} onReset={onReset} />
+    return <QuizRunner quiz={activeQuiz} onAnswer={onAnswer} onCheck={onCheck} onMove={onMove} onFinish={onFinish} onReset={onReset} isFinishing={isFinishing} />
   }
 
   return (
@@ -795,6 +825,7 @@ function QuizRunner({
   onCheck,
   onMove,
   onFinish,
+  isFinishing,
   onReset,
 }: {
   quiz: ActiveQuiz
@@ -802,6 +833,7 @@ function QuizRunner({
   onCheck: (id: string) => void
   onMove: (index: number) => void
   onFinish: () => void
+  isFinishing: boolean
   onReset: () => void
 }) {
   if (!quiz.questions.length) {
@@ -867,8 +899,8 @@ function QuizRunner({
               Далее
             </button>
           ) : (
-            <button className="primary-button" type="button" onClick={onFinish}>
-              Завершить тест
+            <button className="primary-button" type="button" onClick={onFinish} disabled={isFinishing}>
+              {isFinishing ? 'Сохранение…' : 'Завершить тест'}
             </button>
           )}
         </div>
@@ -1162,7 +1194,7 @@ function highlightPseudocode(line: string) {
   })
 }
 
-function StatisticsPage({ results, onClear }: { results: TestResult[]; onClear: () => void }) {
+function StatisticsPage({ results }: { results: TestResult[] }) {
   const average = results.length ? Math.round(results.reduce((sum, result) => sum + result.percentage, 0) / results.length) : 0
   const best = results.length ? Math.max(...results.map((result) => result.percentage)) : 0
   const totalAnswered = results.reduce((sum, result) => sum + result.totalQuestions, 0)
@@ -1194,7 +1226,6 @@ function StatisticsPage({ results, onClear }: { results: TestResult[]; onClear: 
     <section className="analytics-page">
       <div className="analytics-heading">
         <div><p className="eyebrow">Мой прогресс</p><h1>Аналитика</h1><p>Смотри динамику, закрепляй сильные темы и повторяй слабые.</p></div>
-        <button className="danger-button" type="button" onClick={onClear}>Очистить историю</button>
       </div>
       <section className="analytics-kpis">
         <Metric title="Пройдено тестов" value={String(results.length)} />

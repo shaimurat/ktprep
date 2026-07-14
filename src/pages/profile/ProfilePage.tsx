@@ -7,7 +7,7 @@ export function ProfilePage({ user, onUserUpdate }: { user: AuthUser; onUserUpda
   const [displayName, setDisplayName] = useState(user.displayName ?? '')
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? '')
   const [goalScore, setGoalScore] = useState(user.goalScore ?? 100)
-  const [selectedSubjects, setSelectedSubjects] = useState(user.selectedSubjects)
+  const [selectedSubjects, setSelectedSubjects] = useState(user.selectedSubjects ?? [])
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [message, setMessage] = useState('')

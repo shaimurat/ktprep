@@ -18,4 +18,5 @@ const request = async <T>(path: string, options?: RequestInit): Promise<T> => {
 export const loadUsers = () => request<AuthUser[]>('users')
 export const updateRole = (id: string, role: AuthUser['role']) => request<AuthUser>(`users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) })
 export const resetUserPassword = (id: string, newPassword: string) => request<void>(`users/${id}/password`, { method: 'POST', body: JSON.stringify({ newPassword }) })
+export const grantTestAttempt = (id: string) => request<AuthUser>(`users/${id}/attempts`, { method: 'POST' })
 export const deleteUser = (id: string) => request<void>(`users/${id}`, { method: 'DELETE' })

@@ -31,5 +31,5 @@ export const saveQuestions = (questions: Question[]) =>
 
 export const loadResults = () => request<TestResult[]>('results')
 
-export const saveResults = (results: TestResult[]) =>
-  request<void>('results', { method: 'PUT', body: JSON.stringify(results) })
+export const submitResult = (result: TestResult) =>
+  request<{ result: TestResult; attemptsRemaining: number }>('results', { method: 'POST', body: JSON.stringify(result) })

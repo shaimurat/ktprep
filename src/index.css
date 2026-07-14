@@ -166,7 +166,7 @@ button:disabled {
 .subject-choice input { width: auto; }
 .success-message { padding: 10px; border-radius: 8px; color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .admin-users { display: grid; gap: 12px; }
-.admin-user { display: grid; grid-template-columns: minmax(170px, 1fr) 160px minmax(170px, 1fr) auto auto; gap: 12px; align-items: end; }
+.admin-user { display: grid; grid-template-columns: minmax(170px, 1fr) 160px minmax(170px, 1fr) auto auto auto; gap: 12px; align-items: end; }
 .admin-user strong, .admin-user small { display: block; }
 .admin-user small { margin-top: 5px; color: var(--muted); }
 

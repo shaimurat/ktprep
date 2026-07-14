@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { deleteUser, loadUsers, resetUserPassword, updateRole } from '../../services/admin'
+import { deleteUser, grantTestAttempt, loadUsers, resetUserPassword, updateRole } from '../../services/admin'
 import type { AuthUser } from '../../services/auth'
 
 export function AdminPage({ currentUser }: { currentUser: AuthUser }) {
@@ -25,10 +25,11 @@ export function AdminPage({ currentUser }: { currentUser: AuthUser }) {
       {users.map((user) => {
         const isSelf = user.id === currentUser.id
         return <article className="panel admin-user" key={user.id}>
-          <div><strong>{user.login}</strong><small>Зарегистрирован: {new Date(user.createdAt).toLocaleDateString('ru-RU')}</small></div>
+          <div><strong>{user.login}</strong><small>Зарегистрирован: {new Date(user.createdAt).toLocaleDateString('ru-RU')}</small><small>Доступно попыток: {user.attemptsRemaining}</small></div>
           <label>Роль<select value={user.role} disabled={isSelf} onChange={(event) => action(() => updateRole(user.id, event.target.value as AuthUser['role']))}><option value="user">Пользователь</option><option value="admin">Администратор</option></select></label>
           <label>Новый пароль<input type="password" value={passwords[user.id] ?? ''} minLength={6} placeholder="Минимум 6 символов" onChange={(event) => setPasswords({ ...passwords, [user.id]: event.target.value })} /></label>
           <button className="secondary-button" type="button" onClick={() => action(async () => { await resetUserPassword(user.id, passwords[user.id] ?? ''); setPasswords({ ...passwords, [user.id]: '' }) })}>Сбросить пароль</button>
+          <button className="primary-button" type="button" onClick={() => action(() => grantTestAttempt(user.id))}>Открыть пересдачу</button>
           <button className="danger-button" type="button" disabled={isSelf} onClick={() => { if (window.confirm(`Удалить аккаунт ${user.login}?`)) action(() => deleteUser(user.id)) }}><Trash2 size={17} /> Удалить</button>
         </article>
       })}
