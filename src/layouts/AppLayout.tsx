@@ -44,8 +44,8 @@ export function AppLayout({ children, activeRoute, theme, onNavigate, onToggleTh
         <nav>
           <NavigationButton icon={<Home />} label="Главная" active={activeRoute === 'home'} onClick={() => onNavigate('home')} />
           <NavigationButton icon={<BookOpen />} label="Предметы" active={activeRoute === 'subjects'} onClick={() => onNavigate('subjects')} />
-          {user.role === 'admin' && <NavigationButton icon={<Plus />} label="Добавить" active={activeRoute === 'add'} onClick={() => onNavigate('add')} />}
-          {user.role === 'admin' && <NavigationButton icon={<ListChecks />} label="Вопросы" active={activeRoute === 'manage'} onClick={() => onNavigate('manage')} />}
+          <NavigationButton icon={<Plus />} label="Добавить" active={activeRoute === 'add'} onClick={() => onNavigate('add')} />
+          <NavigationButton icon={<ListChecks />} label="Вопросы" active={activeRoute === 'manage'} onClick={() => onNavigate('manage')} />
           <NavigationButton icon={<Play />} label="Тест" active={activeRoute === 'quiz'} onClick={() => onNavigate('quiz')} />
           <NavigationButton icon={<Layers3 />} label="Реальный КТ" active={activeRoute === 'kt'} onClick={() => onNavigate('kt')} />
           <NavigationButton icon={<BarChart3 />} label="Статистика" active={activeRoute === 'stats'} onClick={() => onNavigate('stats')} />

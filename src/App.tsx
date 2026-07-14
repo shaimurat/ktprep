@@ -38,12 +38,13 @@ import {
   normalizeQuestion,
   pseudocodeJsonExample,
 } from './pages/questions/utils/validation'
-import { ANSWER_KEYS, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
-import { checkQuestion, loadQuestions, loadResults, saveQuestions, submitResult, type QuizReview } from './services/apiStorage'
+import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
+import { loadQuestions, loadResults, saveQuestions, submitResult } from './services/apiStorage'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
+import { demoQuestions } from './models/demoQuestions'
 import { emptyBySubject, SUBJECTS, subjectById } from './models/subjects'
-import type { AnswerKey, Question, Subject, TestResult } from './types'
+import type { AnswerKey, Question, QuestionAttempt, Subject, TestResult } from './types'
 import { createId } from './utils/id'
 import { shuffle } from './utils/shuffle'
 
@@ -107,7 +108,7 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   const [questions, setQuestions, questionsError] = useDatabaseState(
     loadQuestions,
     saveQuestions,
-    [],
+    demoQuestions,
     'Новые вопросы',
   )
   const [results, setResults] = useState<TestResult[]>([])
@@ -115,7 +116,15 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   const [quizError, setQuizError] = useState('')
   const [isFinishingQuiz, setIsFinishingQuiz] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<Subject>('tgo')
-  const [activeQuiz, setActiveQuiz] = useState<ActiveQuiz | null>(null)
+  const [activeQuiz, setActiveQuiz] = useState<{
+    mode: QuizMode
+    questions: Question[]
+    showExplanation: boolean
+    index: number
+    answers: AnswerMap
+    checked: Record<string, boolean>
+    finished: boolean
+  } | null>(null)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -156,10 +165,33 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   }
 
   const saveResult = async (mode: QuizMode, quizQuestions: Question[], answers: AnswerMap) => {
-    const saved = await submitResult({ mode, questionIds: quizQuestions.map((question) => question.id), answers })
+    const bySubject = emptyBySubject()
+    let correctAnswers = 0
+
+    const questionAttempts: QuestionAttempt[] = quizQuestions.map((question) => {
+      const correct = answersMatch(answers[question.id], getCorrectAnswers(question))
+      bySubject[question.subject].total += 1
+      if (correct) {
+        bySubject[question.subject].correct += 1
+        correctAnswers += 1
+      }
+      return { questionId: question.id, subject: question.subject, topic: question.topic || 'Без темы', correct }
+    })
+
+    const result: TestResult = {
+      id: createId(),
+      mode,
+      date: new Date().toISOString(),
+      totalQuestions: quizQuestions.length,
+      correctAnswers,
+      percentage: quizQuestions.length ? Math.round((correctAnswers / quizQuestions.length) * 100) : 0,
+      bySubject,
+      questionAttempts,
+    }
+
+    const saved = await submitResult(result)
     setResults((current) => [saved.result, ...current].slice(0, 50))
     onUserChange({ ...user, attemptsRemaining: saved.attemptsRemaining })
-    return saved
   }
 
   const canStartQuiz = () => {
@@ -229,8 +261,8 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     setIsFinishingQuiz(true)
     setQuizError('')
     try {
-      const saved = await saveResult(activeQuiz.mode, activeQuiz.questions, activeQuiz.answers)
-      setActiveQuiz({ ...activeQuiz, finished: true, review: saved.review, result: saved.result })
+      await saveResult(activeQuiz.mode, activeQuiz.questions, activeQuiz.answers)
+      setActiveQuiz({ ...activeQuiz, finished: true })
     } catch (error) {
       setQuizError(error instanceof Error ? error.message : 'Не удалось завершить тест.')
     } finally {
@@ -273,13 +305,13 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
           />
         )}
         {view === 'subjects' && <SubjectsPage counts={counts} onNavigate={navigate} />}
-        {view === 'add' && user.role === 'admin' && (
+        {view === 'add' && (
           <AddQuestionsPage
             onAdd={(items) => setQuestions(mergeQuestionsWithTopics(questions, items))}
             selectedSubject={selectedSubject}
           />
         )}
-        {view === 'manage' && user.role === 'admin' && (
+        {view === 'manage' && (
           <ManageQuestionsPage
             questions={questions}
             selectedSubject={selectedSubject}
@@ -304,15 +336,9 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
             onAnswer={(id, answer) =>
               activeQuiz && setActiveQuiz({ ...activeQuiz, answers: { ...activeQuiz.answers, [id]: toggleAnswer(activeQuiz.answers[id], answer) } })
             }
-            onCheck={async (id) => {
-              if (!activeQuiz) return
-              try {
-                const feedback = await checkQuestion(id, activeQuiz.answers[id] ?? [])
-                setActiveQuiz((current) => current && ({ ...current, checked: { ...current.checked, [id]: true }, review: { ...current.review, [id]: feedback } }))
-              } catch (error) {
-                setQuizError(error instanceof Error ? error.message : 'Не удалось проверить ответ.')
-              }
-            }}
+            onCheck={(id) =>
+              activeQuiz && setActiveQuiz({ ...activeQuiz, checked: { ...activeQuiz.checked, [id]: true } })
+            }
             onMove={(index) => activeQuiz && setActiveQuiz({ ...activeQuiz, index })}
             onFinish={finishQuiz}
             isFinishing={isFinishingQuiz}
@@ -327,15 +353,9 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
             onAnswer={(id, answer) =>
               activeQuiz && setActiveQuiz({ ...activeQuiz, answers: { ...activeQuiz.answers, [id]: toggleAnswer(activeQuiz.answers[id], answer) } })
             }
-            onCheck={async (id) => {
-              if (!activeQuiz) return
-              try {
-                const feedback = await checkQuestion(id, activeQuiz.answers[id] ?? [])
-                setActiveQuiz((current) => current && ({ ...current, checked: { ...current.checked, [id]: true }, review: { ...current.review, [id]: feedback } }))
-              } catch (error) {
-                setQuizError(error instanceof Error ? error.message : 'Не удалось проверить ответ.')
-              }
-            }}
+            onCheck={(id) =>
+              activeQuiz && setActiveQuiz({ ...activeQuiz, checked: { ...activeQuiz.checked, [id]: true } })
+            }
             onMove={(index) => activeQuiz && setActiveQuiz({ ...activeQuiz, index })}
             onFinish={finishQuiz}
             isFinishing={isFinishingQuiz}
@@ -601,7 +621,7 @@ function SubjectQuizPage({
   onStart: (settings: QuizSettings) => void
   onHardStart: (settings: HardQuizSettings) => void
   onAnswer: (id: string, answer: AnswerKey) => void
-  onCheck: (id: string) => Promise<void>
+  onCheck: (id: string) => void
   onMove: (index: number) => void
   onFinish: () => void
   isFinishing: boolean
@@ -744,8 +764,6 @@ type ActiveQuiz = {
   answers: AnswerMap
   checked: Record<string, boolean>
   finished: boolean
-  review?: QuizReview
-  result?: TestResult
 }
 
 function KtModePage({
@@ -763,7 +781,7 @@ function KtModePage({
   counts: Record<Subject, number>
   onStart: (settings: KtSettings) => void
   onAnswer: (id: string, answer: AnswerKey) => void
-  onCheck: (id: string) => Promise<void>
+  onCheck: (id: string) => void
   onMove: (index: number) => void
   onFinish: () => void
   isFinishing: boolean
@@ -812,7 +830,7 @@ function QuizRunner({
 }: {
   quiz: ActiveQuiz
   onAnswer: (id: string, answer: AnswerKey) => void
-  onCheck: (id: string) => Promise<void>
+  onCheck: (id: string) => void
   onMove: (index: number) => void
   onFinish: () => void
   isFinishing: boolean
@@ -831,7 +849,8 @@ function QuizRunner({
   const question = quiz.questions[quiz.index]
   const selected = quiz.answers[question.id] ?? []
   const isChecked = Boolean(quiz.checked[question.id])
-  const feedback = quiz.review?.[question.id]
+  const correctAnswers = getCorrectAnswers(question)
+  const isAnsweredCorrectly = answersMatch(selected, correctAnswers)
   const progress = Math.round(((quiz.index + 1) / quiz.questions.length) * 100)
 
   return (
@@ -862,9 +881,9 @@ function QuizRunner({
           ))}
         </div>
         {isChecked && (
-          <div className={feedback?.correct ? 'inline-feedback good' : 'inline-feedback bad'}>
-            {feedback?.correct ? 'Верно.' : `Неверно. Правильные ответы: ${formatAnswers(feedback?.correctAnswers)}.`}
-            {quiz.showExplanation && feedback?.explanation && ` ${feedback.explanation}`}
+          <div className={isAnsweredCorrectly ? 'inline-feedback good' : 'inline-feedback bad'}>
+            {isAnsweredCorrectly ? 'Верно.' : `Неверно. Правильные ответы: ${formatAnswers(correctAnswers)}.`}
+            {quiz.showExplanation && question.explanation && ` ${question.explanation}`}
           </div>
         )}
         <div className="button-row spread">
@@ -894,19 +913,26 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
   const [subjectFilter, setSubjectFilter] = useState<Subject | 'all'>('all')
   const [sortMode, setSortMode] = useState<'errors' | 'order'>('errors')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const result = quiz.result
-  const review = quiz.review ?? {}
-  const bySubject = result?.bySubject ?? emptyBySubject()
-  const correct = result?.correctAnswers ?? 0
-  const percentage = result?.percentage ?? 0
+  const bySubject = emptyBySubject()
+  let correct = 0
+
+  quiz.questions.forEach((question) => {
+    bySubject[question.subject].total += 1
+    if (answersMatch(quiz.answers[question.id], getCorrectAnswers(question))) {
+      bySubject[question.subject].correct += 1
+      correct += 1
+    }
+  })
+
+  const percentage = Math.round((correct / quiz.questions.length) * 100)
   const incorrect = quiz.questions.length - correct
   const visibleQuestions = quiz.questions
     .map((question, index) => ({ question, index }))
     .filter(({ question }) => subjectFilter === 'all' || question.subject === subjectFilter)
     .sort((a, b) => {
       if (sortMode === 'order') return a.index - b.index
-      const aCorrect = review[a.question.id]?.correct ?? false
-      const bCorrect = review[b.question.id]?.correct ?? false
+      const aCorrect = answersMatch(quiz.answers[a.question.id], getCorrectAnswers(a.question))
+      const bCorrect = answersMatch(quiz.answers[b.question.id], getCorrectAnswers(b.question))
       return Number(aCorrect) - Number(bCorrect) || a.index - b.index
     })
   const resultMessage = percentage >= 85
@@ -1004,8 +1030,7 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
 
             <div className="result-question-list">
               {visibleQuestions.map(({ question }) => {
-                const itemReview = review[question.id]
-                const isCorrect = itemReview?.correct ?? false
+                const isCorrect = answersMatch(quiz.answers[question.id], getCorrectAnswers(question))
                 const isExpanded = Boolean(expanded[question.id])
                 return (
                   <article className={`result-question ${isCorrect ? 'is-correct' : 'is-wrong'}`} key={question.id}>
@@ -1019,9 +1044,9 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                       <p className="result-answer-line">
                         Ваш ответ: <b className={isCorrect ? 'answer-good' : 'answer-bad'}>{formatAnswers(quiz.answers[question.id]) || '—'}</b>
                         <span>•</span>
-                        Правильный ответ: <b className="answer-good">{formatAnswers(itemReview?.correctAnswers)}</b>
+                        Правильный ответ: <b className="answer-good">{formatAnswers(getCorrectAnswers(question))}</b>
                       </p>
-                      {itemReview?.explanation && (isExpanded || !isCorrect) && <p className="result-explanation">{itemReview.explanation}</p>}
+                      {question.explanation && (isExpanded || !isCorrect) && <p className="result-explanation">{question.explanation}</p>}
                     </div>
                     <button
                       className="result-detail-button"

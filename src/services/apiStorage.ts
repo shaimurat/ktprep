@@ -1,4 +1,5 @@
-import type { AnswerKey, Question, TestResult } from '../types'
+import { demoQuestions } from '../models/demoQuestions'
+import type { Question, TestResult } from '../types'
 
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -16,10 +17,13 @@ const request = async <T,>(path: string, options?: RequestInit): Promise<T> => {
 
 export const loadQuestions = async () => {
   const stored = await request<Question[]>('questions')
-  return stored.map((question) => ({
+  const questions = stored.length ? stored : demoQuestions
+  const normalized = questions.map((question) => ({
     ...question,
     topic: question.topic?.trim() || 'Без темы',
   }))
+  if (!stored.length) await saveQuestions(normalized)
+  return normalized
 }
 
 export const saveQuestions = (questions: Question[]) =>
@@ -27,10 +31,5 @@ export const saveQuestions = (questions: Question[]) =>
 
 export const loadResults = () => request<TestResult[]>('results')
 
-export type QuizReview = Record<string, { correct: boolean; correctAnswers: AnswerKey[]; explanation: string | null }>
-
-export const checkQuestion = (id: string, answers: AnswerKey[]) =>
-  request<QuizReview[string]>(`questions/${id}/check`, { method: 'POST', body: JSON.stringify({ answers }) })
-
-export const submitResult = (payload: { mode: TestResult['mode']; questionIds: string[]; answers: Record<string, AnswerKey[] | undefined> }) =>
-  request<{ result: TestResult; review: QuizReview; attemptsRemaining: number }>('results', { method: 'POST', body: JSON.stringify(payload) })
+export const submitResult = (result: TestResult) =>
+  request<{ result: TestResult; attemptsRemaining: number }>('results', { method: 'POST', body: JSON.stringify(result) })
