@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import pg from 'pg'
 import path from 'node:path'
@@ -102,6 +102,19 @@ const publicUser = (user) => ({
   attemptsRemaining: user.attempts_remaining,
   createdAt: user.created_at,
 })
+
+// Do not disclose answers in the initial question list. They are sent only
+// after the user finishes a test.
+const publicQuestion = ({ correctAnswers, correctAnswer, explanation, ...question }) => question
+const getCorrectAnswers = (question) => {
+  const answers = question.correctAnswers ?? question.correctAnswer ?? []
+  return (Array.isArray(answers) ? answers : [answers]).filter((answer) => typeof answer === 'string')
+}
+const answersMatch = (selected, correct) => {
+  if (!Array.isArray(selected) || selected.length !== correct.length) return false
+  const selectedSet = new Set(selected)
+  return selected.every((answer) => typeof answer === 'string' && correct.includes(answer)) && correct.every((answer) => selectedSet.has(answer))
+}
 
 const parseCookies = (header = '') =>
   Object.fromEntries(header.split(';').map((item) => item.trim().split(/=(.*)/s, 2)).filter(([key]) => key))
@@ -349,6 +362,9 @@ app.patch('/api/admin/users/:id/role', async (req, res, next) => {
 app.post('/api/admin/users/:id/attempts', async (req, res, next) => {
   try {
     if (!await requireAdmin(req, res)) return
+    const target = await pool.query('SELECT role FROM users WHERE id = $1', [req.params.id])
+    if (!target.rows[0]) return res.status(404).json({ error: 'Пользователь не найден.' })
+    if (target.rows[0].role === 'admin') return res.status(400).json({ error: 'У администратора безлимитные попытки.' })
     const { rows } = await pool.query(
       `UPDATE users
           SET attempts_remaining = attempts_remaining + 1
@@ -437,7 +453,39 @@ const collectionRoutes = (route, table) => {
   })
 }
 
-collectionRoutes('questions', 'questions')
+app.get('/api/questions', async (req, res, next) => {
+  try {
+    const user = await requireUser(req, res)
+    if (!user) return
+    const { rows } = await pool.query('SELECT data FROM questions ORDER BY position ASC NULLS LAST, id')
+    const questions = rows.map((row) => row.data)
+    res.json(user.role === 'admin' ? questions : questions.map(publicQuestion))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/questions', async (req, res, next) => {
+  if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected a JSON array' })
+  let client
+  try {
+    if (!await requireAdmin(req, res)) return
+    client = await pool.connect()
+    await client.query('BEGIN')
+    await client.query('DELETE FROM questions')
+    for (const [position, item] of req.body.entries()) {
+      if (!item?.id || typeof item.id !== 'string') throw new Error('Every item must have a string id')
+      await client.query('INSERT INTO questions (id, data, position) VALUES ($1, $2::jsonb, $3)', [item.id, JSON.stringify(item), position])
+    }
+    await client.query('COMMIT')
+    res.sendStatus(204)
+  } catch (error) {
+    if (client) await client.query('ROLLBACK')
+    next(error)
+  } finally {
+    client?.release()
+  }
+})
 
 app.get('/api/results', async (req, res, next) => {
   try {
@@ -458,8 +506,8 @@ app.post('/api/results', async (req, res, next) => {
   try {
     const user = await requireUser(req, res)
     if (!user) return
-    const result = req.body
-    if (!result?.id || typeof result.id !== 'string' || !['subject', 'random', 'kt', 'kt-hard'].includes(result.mode)) {
+    const { mode, questionIds, answers } = req.body ?? {}
+    if (!['subject', 'random', 'kt', 'kt-hard'].includes(mode) || !Array.isArray(questionIds) || !questionIds.length || questionIds.length > 100 || new Set(questionIds).size !== questionIds.length || !questionIds.every((id) => typeof id === 'string') || !answers || typeof answers !== 'object' || Array.isArray(answers)) {
       return res.status(400).json({ error: 'Некорректный результат теста.' })
     }
     client = await pool.connect()
@@ -477,13 +525,45 @@ app.post('/api/results', async (req, res, next) => {
       await client.query('ROLLBACK')
       return res.status(403).json({ error: 'Попытка уже использована. Обратитесь к администратору, чтобы открыть пересдачу.' })
     }
+    const questionRows = await client.query('SELECT id, data FROM questions WHERE id = ANY($1::text[])', [questionIds])
+    if (questionRows.rows.length !== questionIds.length) {
+      await client.query('ROLLBACK')
+      return res.status(400).json({ error: 'Один или несколько вопросов больше не существуют.' })
+    }
+    const questionsById = new Map(questionRows.rows.map((row) => [row.id, row.data]))
+    const bySubject = { tgo: { total: 0, correct: 0 }, english: { total: 0, correct: 0 }, databases: { total: 0, correct: 0 }, algorithms: { total: 0, correct: 0 } }
+    const questionAttempts = []
+    const review = {}
+    let correctAnswers = 0
+    for (const id of questionIds) {
+      const question = questionsById.get(id)
+      const correct = getCorrectAnswers(question)
+      const correctAnswer = answersMatch(answers[id], correct)
+      bySubject[question.subject].total += 1
+      if (correctAnswer) {
+        bySubject[question.subject].correct += 1
+        correctAnswers += 1
+      }
+      questionAttempts.push({ questionId: id, subject: question.subject, topic: question.topic || 'Без темы', correct: correctAnswer })
+      review[id] = { correct: correctAnswer, correctAnswers: correct, explanation: question.explanation || null }
+    }
+    const result = {
+      id: randomUUID(),
+      mode,
+      date: new Date().toISOString(),
+      totalQuestions: questionIds.length,
+      correctAnswers,
+      percentage: Math.round((correctAnswers / questionIds.length) * 100),
+      bySubject,
+      questionAttempts,
+    }
     const position = await client.query('SELECT coalesce(max(position), -1) + 1 AS position FROM test_results WHERE user_id = $1', [user.id])
     await client.query(
       'INSERT INTO test_results (id, data, position, user_id) VALUES ($1, $2::jsonb, $3, $4)',
       [result.id, JSON.stringify(result), position.rows[0].position, user.id],
     )
     await client.query('COMMIT')
-    res.status(201).json({ result, attemptsRemaining: updated.rows[0].attempts_remaining })
+    res.status(201).json({ result, review, attemptsRemaining: updated.rows[0].attempts_remaining })
   } catch (error) {
     if (client) await client.query('ROLLBACK')
     next(error)
