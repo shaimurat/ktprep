@@ -487,6 +487,26 @@ app.put('/api/questions', async (req, res, next) => {
   }
 })
 
+app.post('/api/questions/:id/check', async (req, res, next) => {
+  try {
+    if (!await requireUser(req, res)) return
+    const selected = req.body?.answers
+    if (!Array.isArray(selected) || selected.some((answer) => typeof answer !== 'string')) {
+      return res.status(400).json({ error: 'Некорректный ответ.' })
+    }
+    const { rows } = await pool.query('SELECT data FROM questions WHERE id = $1', [req.params.id])
+    if (!rows[0]) return res.status(404).json({ error: 'Вопрос не найден.' })
+    const correctAnswers = getCorrectAnswers(rows[0].data)
+    res.json({
+      correct: answersMatch(selected, correctAnswers),
+      correctAnswers,
+      explanation: rows[0].data.explanation || null,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/results', async (req, res, next) => {
   try {
     const user = await requireUser(req, res)

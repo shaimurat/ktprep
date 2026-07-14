@@ -29,5 +29,8 @@ export const loadResults = () => request<TestResult[]>('results')
 
 export type QuizReview = Record<string, { correct: boolean; correctAnswers: AnswerKey[]; explanation: string | null }>
 
+export const checkQuestion = (id: string, answers: AnswerKey[]) =>
+  request<QuizReview[string]>(`questions/${id}/check`, { method: 'POST', body: JSON.stringify({ answers }) })
+
 export const submitResult = (payload: { mode: TestResult['mode']; questionIds: string[]; answers: Record<string, AnswerKey[] | undefined> }) =>
   request<{ result: TestResult; review: QuizReview; attemptsRemaining: number }>('results', { method: 'POST', body: JSON.stringify(payload) })

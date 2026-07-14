@@ -39,7 +39,7 @@ import {
   pseudocodeJsonExample,
 } from './pages/questions/utils/validation'
 import { ANSWER_KEYS, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
-import { loadQuestions, loadResults, saveQuestions, submitResult, type QuizReview } from './services/apiStorage'
+import { checkQuestion, loadQuestions, loadResults, saveQuestions, submitResult, type QuizReview } from './services/apiStorage'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
 import { emptyBySubject, SUBJECTS, subjectById } from './models/subjects'
@@ -304,9 +304,15 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
             onAnswer={(id, answer) =>
               activeQuiz && setActiveQuiz({ ...activeQuiz, answers: { ...activeQuiz.answers, [id]: toggleAnswer(activeQuiz.answers[id], answer) } })
             }
-            onCheck={(id) =>
-              activeQuiz && setActiveQuiz({ ...activeQuiz, checked: { ...activeQuiz.checked, [id]: true } })
-            }
+            onCheck={async (id) => {
+              if (!activeQuiz) return
+              try {
+                const feedback = await checkQuestion(id, activeQuiz.answers[id] ?? [])
+                setActiveQuiz((current) => current && ({ ...current, checked: { ...current.checked, [id]: true }, review: { ...current.review, [id]: feedback } }))
+              } catch (error) {
+                setQuizError(error instanceof Error ? error.message : 'Не удалось проверить ответ.')
+              }
+            }}
             onMove={(index) => activeQuiz && setActiveQuiz({ ...activeQuiz, index })}
             onFinish={finishQuiz}
             isFinishing={isFinishingQuiz}
@@ -321,9 +327,15 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
             onAnswer={(id, answer) =>
               activeQuiz && setActiveQuiz({ ...activeQuiz, answers: { ...activeQuiz.answers, [id]: toggleAnswer(activeQuiz.answers[id], answer) } })
             }
-            onCheck={(id) =>
-              activeQuiz && setActiveQuiz({ ...activeQuiz, checked: { ...activeQuiz.checked, [id]: true } })
-            }
+            onCheck={async (id) => {
+              if (!activeQuiz) return
+              try {
+                const feedback = await checkQuestion(id, activeQuiz.answers[id] ?? [])
+                setActiveQuiz((current) => current && ({ ...current, checked: { ...current.checked, [id]: true }, review: { ...current.review, [id]: feedback } }))
+              } catch (error) {
+                setQuizError(error instanceof Error ? error.message : 'Не удалось проверить ответ.')
+              }
+            }}
             onMove={(index) => activeQuiz && setActiveQuiz({ ...activeQuiz, index })}
             onFinish={finishQuiz}
             isFinishing={isFinishingQuiz}
@@ -589,7 +601,7 @@ function SubjectQuizPage({
   onStart: (settings: QuizSettings) => void
   onHardStart: (settings: HardQuizSettings) => void
   onAnswer: (id: string, answer: AnswerKey) => void
-  onCheck: (id: string) => void
+  onCheck: (id: string) => Promise<void>
   onMove: (index: number) => void
   onFinish: () => void
   isFinishing: boolean
@@ -751,7 +763,7 @@ function KtModePage({
   counts: Record<Subject, number>
   onStart: (settings: KtSettings) => void
   onAnswer: (id: string, answer: AnswerKey) => void
-  onCheck: (id: string) => void
+  onCheck: (id: string) => Promise<void>
   onMove: (index: number) => void
   onFinish: () => void
   isFinishing: boolean
@@ -800,7 +812,7 @@ function QuizRunner({
 }: {
   quiz: ActiveQuiz
   onAnswer: (id: string, answer: AnswerKey) => void
-  onCheck: (id: string) => void
+  onCheck: (id: string) => Promise<void>
   onMove: (index: number) => void
   onFinish: () => void
   isFinishing: boolean
@@ -819,6 +831,7 @@ function QuizRunner({
   const question = quiz.questions[quiz.index]
   const selected = quiz.answers[question.id] ?? []
   const isChecked = Boolean(quiz.checked[question.id])
+  const feedback = quiz.review?.[question.id]
   const progress = Math.round(((quiz.index + 1) / quiz.questions.length) * 100)
 
   return (
@@ -849,8 +862,9 @@ function QuizRunner({
           ))}
         </div>
         {isChecked && (
-          <div className="inline-feedback good">
-            Ответ сохранён. Результат и объяснение будут показаны после завершения теста.
+          <div className={feedback?.correct ? 'inline-feedback good' : 'inline-feedback bad'}>
+            {feedback?.correct ? 'Верно.' : `Неверно. Правильные ответы: ${formatAnswers(feedback?.correctAnswers)}.`}
+            {quiz.showExplanation && feedback?.explanation && ` ${feedback.explanation}`}
           </div>
         )}
         <div className="button-row spread">
