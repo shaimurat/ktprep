@@ -86,13 +86,7 @@ const schemaReady = pool.query(`
   ALTER TABLE users ALTER COLUMN attempts_remaining SET DEFAULT 5;
   UPDATE users SET attempts_remaining = 5 WHERE role = 'user';
 
-  DELETE FROM user_sessions
-   WHERE id NOT IN (
-     SELECT DISTINCT ON (user_id) id
-       FROM user_sessions
-      ORDER BY user_id, created_at DESC, id DESC
-   );
-  CREATE UNIQUE INDEX IF NOT EXISTS user_sessions_user_id_idx ON user_sessions (user_id);
+  DROP INDEX IF EXISTS user_sessions_user_id_idx;
 `)
 
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 14
@@ -186,6 +180,7 @@ app.get('/api/auth/me', async (req, res, next) => {
 })
 
 app.post('/api/auth/register', async (req, res, next) => {
+  let client
   try {
     const login = typeof req.body?.login === 'string' ? req.body.login.trim() : ''
     const password = typeof req.body?.password === 'string' ? req.body.password : ''
@@ -195,21 +190,28 @@ app.post('/api/auth/register', async (req, res, next) => {
     if (password.length < 6) return res.status(400).json({ error: 'Пароль должен содержать минимум 6 символов.' })
     await schemaReady
     const passwordHash = await hashPassword(password)
-    const { rows } = await pool.query(
+    client = await pool.connect()
+    await client.query('BEGIN')
+    const { rows } = await client.query(
       'INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id, login, role, display_name, avatar_url, goal_score, selected_subjects, attempts_remaining, created_at',
       [login, passwordHash],
     )
     const token = randomBytes(32).toString('base64url')
-    await pool.query(
-      `INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)
-       ON CONFLICT (user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = now()`,
+    await client.query(
+      'INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)',
       [rows[0].id, hashSessionToken(token), `${SESSION_DURATION_SECONDS} seconds`],
     )
+    await client.query('COMMIT')
     setSessionCookie(req, res, token)
     res.status(201).json(publicUser(rows[0]))
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'Этот логин уже занят.' })
+    if (client) await client.query('ROLLBACK')
+    if (error.code === '23505' && error.constraint === 'users_login_key') {
+      return res.status(409).json({ error: 'Этот логин уже занят.' })
+    }
     next(error)
+  } finally {
+    client?.release()
   }
 })
 
@@ -224,8 +226,7 @@ app.post('/api/auth/login', async (req, res, next) => {
     }
     const token = randomBytes(32).toString('base64url')
     await pool.query(
-      `INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)
-       ON CONFLICT (user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, created_at = now()`,
+      'INSERT INTO user_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, now() + $3::interval)',
       [rows[0].id, hashSessionToken(token), `${SESSION_DURATION_SECONDS} seconds`],
     )
     setSessionCookie(req, res, token)
