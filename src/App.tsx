@@ -195,7 +195,7 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   }
 
   const canStartQuiz = () => {
-    if (user.attemptsRemaining > 0) return true
+    if (user.role === 'admin' || user.attemptsRemaining > 0) return true
     setQuizError('Ваша попытка использована. Обратитесь к администратору, чтобы он открыл пересдачу.')
     return false
   }

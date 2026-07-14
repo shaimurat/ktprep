@@ -462,13 +462,15 @@ app.post('/api/results', async (req, res, next) => {
     }
     client = await pool.connect()
     await client.query('BEGIN')
-    const updated = await client.query(
-      `UPDATE users
-          SET attempts_remaining = attempts_remaining - 1
-        WHERE id = $1 AND attempts_remaining > 0
-      RETURNING attempts_remaining`,
-      [user.id],
-    )
+    const updated = user.role === 'admin'
+      ? { rows: [{ attempts_remaining: user.attempts_remaining }] }
+      : await client.query(
+        `UPDATE users
+            SET attempts_remaining = attempts_remaining - 1
+          WHERE id = $1 AND attempts_remaining > 0
+        RETURNING attempts_remaining`,
+        [user.id],
+      )
     if (!updated.rows[0]) {
       await client.query('ROLLBACK')
       return res.status(403).json({ error: 'Попытка уже использована. Обратитесь к администратору, чтобы открыть пересдачу.' })
