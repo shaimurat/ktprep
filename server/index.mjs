@@ -25,7 +25,17 @@ parsedDatabaseUrl.searchParams.delete('uselibpqcompat')
 const pool = new Pool({
   connectionString: parsedDatabaseUrl.toString(),
   ssl: isLocalDatabase ? false : { rejectUnauthorized: true },
-  connectionTimeoutMillis: 10_000,
+  // Render loads several API endpoints in parallel. A single persistent
+  // connection is more reliable with Neon’s transaction pooler than opening
+  // a burst of short-lived connections on a free instance.
+  max: 1,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 30_000,
+  keepAlive: true,
+})
+
+pool.on('error', (error) => {
+  console.error('Unexpected PostgreSQL pool error:', error)
 })
 
 const app = express()
