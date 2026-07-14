@@ -82,8 +82,9 @@ const schemaReady = pool.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS goal_score INTEGER;
   ALTER TABLE users ADD COLUMN IF NOT EXISTS selected_subjects JSONB NOT NULL DEFAULT '[]'::jsonb;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS attempts_remaining INTEGER NOT NULL DEFAULT 1;
-  UPDATE users SET attempts_remaining = 1 WHERE attempts_remaining IS NULL OR attempts_remaining < 0;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS attempts_remaining INTEGER NOT NULL DEFAULT 5;
+  ALTER TABLE users ALTER COLUMN attempts_remaining SET DEFAULT 5;
+  UPDATE users SET attempts_remaining = 5 WHERE role = 'user';
 
   DELETE FROM user_sessions
    WHERE id NOT IN (
