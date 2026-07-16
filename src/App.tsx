@@ -53,6 +53,7 @@ type QuizScope = 'topic' | 'subject' | 'random'
 type QuizSettings = {
   subject: Subject
   scope: QuizScope
+  author: string
   topic: string
   count: number | 'all'
   showExplanation: boolean
@@ -70,6 +71,7 @@ const ALGORITHMS_HARD_TOPIC_PREFIX = 'КТ Hard —'
 
 const defaultQuestionForm: Omit<Question, 'id'> = {
   subject: 'databases',
+  author: '',
   topic: 'Без темы',
   question: '',
   options: {},
@@ -206,7 +208,8 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     const pool = mainQuestions.filter((question) => {
       if (settings.scope === 'random') return true
       if (question.subject !== settings.subject) return false
-      return settings.scope === 'subject' || question.topic === settings.topic
+      if (settings.scope === 'subject') return true
+      return (settings.author === 'all' || question.author === settings.author) && question.topic === settings.topic
     })
     const limit = settings.count === 'all' ? pool.length : Math.min(settings.count, pool.length)
     setActiveQuiz({
@@ -404,7 +407,7 @@ function AddQuestionsPage({
     const saved = await onAdd([{ ...result.question, id: createId() }])
     setSaving(false)
     if (saved) {
-      setForm({ ...defaultQuestionForm, subject: form.subject, topic: form.topic })
+      setForm({ ...defaultQuestionForm, subject: form.subject, author: form.author, topic: form.topic })
       setMessage('Вопрос успешно сохранён в базе данных.')
     } else {
       setMessage('Не удалось сохранить вопрос в базе данных.')
@@ -463,6 +466,16 @@ function AddQuestionsPage({
               <p>
                 Запишите формулировку и код в поле <code>question</code>. Отделите код пустой строкой
                 через <code>\n\n</code>, а каждую новую строку кода — через <code>\n</code>.
+              </p>
+            </div>
+          </div>
+          <div className="pseudocode-import-hint">
+            <Braces size={20} />
+            <div>
+              <strong>Укажите автора курса</strong>
+              <p>
+                Добавьте поле <code>"author": "Рабат"</code> в каждый вопрос. Тогда в тренировке
+                можно будет сначала выбрать автора, а затем его темы.
               </p>
             </div>
           </div>
@@ -630,7 +643,9 @@ function SubjectQuizPage({
   const [count, setCount] = useState<QuizSettings['count']>(10)
   const [showExplanation, setShowExplanation] = useState(true)
   const [scope, setScope] = useState<QuizScope>('topic')
-  const topics = getTopics(questions, selectedSubject)
+  const authors = getAuthors(questions, selectedSubject)
+  const [author, setAuthor] = useState('all')
+  const topics = getTopics(questions, selectedSubject, author)
   const [topic, setTopic] = useState('')
   const [hardTopic, setHardTopic] = useState('')
   const [isHardTopicSelectOpen, setIsHardTopicSelectOpen] = useState(false)
@@ -645,7 +660,11 @@ function SubjectQuizPage({
     ? questions.length
     : scope === 'subject'
       ? counts[selectedSubject]
-      : questions.filter((question) => question.subject === selectedSubject && question.topic === selectedTopic).length
+      : questions.filter(
+        (question) => question.subject === selectedSubject &&
+          (author === 'all' || question.author === author) &&
+          question.topic === selectedTopic,
+      ).length
 
   if (activeQuiz) {
     return <QuizRunner quiz={activeQuiz} onAnswer={onAnswer} onCheck={onCheck} onMove={onMove} onFinish={onFinish} onReset={onReset} isFinishing={isFinishing} />
@@ -660,14 +679,38 @@ function SubjectQuizPage({
           <button className={scope === 'subject' ? 'active' : ''} type="button" onClick={() => setScope('subject')}>По предмету</button>
           <button className={scope === 'random' ? 'active' : ''} type="button" onClick={() => setScope('random')}>Полный рандом</button>
         </div>
-        {scope !== 'random' && <SubjectSelect value={selectedSubject} onChange={onSettingsSubject} />}
+        {scope !== 'random' && (
+          <SubjectSelect
+            value={selectedSubject}
+            onChange={(subject) => {
+              onSettingsSubject(subject)
+              setAuthor('all')
+              setTopic('')
+            }}
+          />
+        )}
         {scope === 'topic' && (
-          <label>
-            Тема
-            <select value={selectedTopic} onChange={(event) => setTopic(event.target.value)}>
-              {topics.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
+          <>
+            <label>
+              Автор
+              <select
+                value={author}
+                onChange={(event) => {
+                  setAuthor(event.target.value)
+                  setTopic('')
+                }}
+              >
+                <option value="all">Все авторы</option>
+                {authors.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              Тема
+              <select value={selectedTopic} onChange={(event) => setTopic(event.target.value)}>
+                {topics.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+          </>
         )}
         <div className="segmented">
           {[5, 10, 20].map((value) => (
@@ -687,7 +730,7 @@ function SubjectQuizPage({
           className="primary-button"
           type="button"
           disabled={!poolCount}
-          onClick={() => onStart({ subject: selectedSubject, scope, topic: selectedTopic, count, showExplanation })}
+          onClick={() => onStart({ subject: selectedSubject, scope, author, topic: selectedTopic, count, showExplanation })}
         >
           <Play size={18} /> Начать тест ({poolCount})
         </button>
@@ -1293,6 +1336,14 @@ function QuestionEditor({
     <div className="form-grid">
       <SubjectSelect value={value.subject} onChange={(subject) => update({ subject })} />
       <label>
+        Автор
+        <input
+          value={value.author ?? ''}
+          onChange={(event) => update({ author: event.target.value })}
+          placeholder="Например: Рабат"
+        />
+      </label>
+      <label>
         Тема
         <input
           value={value.topic}
@@ -1347,10 +1398,19 @@ function SubjectSelect({ value, onChange }: { value: Subject; onChange: (value: 
   )
 }
 
-function getTopics(questions: Question[], subject: Subject) {
+function getAuthors(questions: Question[], subject: Subject) {
   return [...new Set(
     questions
       .filter((question) => question.subject === subject)
+      .map((question) => question.author?.trim())
+      .filter((author): author is string => Boolean(author)),
+  )].sort((left, right) => left.localeCompare(right, 'ru'))
+}
+
+function getTopics(questions: Question[], subject: Subject, author = 'all') {
+  return [...new Set(
+    questions
+      .filter((question) => question.subject === subject && (author === 'all' || question.author === author))
       .map((question) => question.topic?.trim() || 'Без темы'),
   )].sort((left, right) => left.localeCompare(right, 'ru'))
 }

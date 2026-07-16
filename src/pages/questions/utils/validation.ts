@@ -12,6 +12,7 @@ type RawQuestion = Partial<Omit<Question, 'id'>> & {
 export const jsonExample = `[
   {
     "subject": "databases",
+    "author": "Рабат",
     "topic": "Ключи и связи",
     "question": "Что такое первичный ключ?",
     "options": {
@@ -33,6 +34,7 @@ export const jsonExample = `[
 export const pseudocodeJsonExample = `[
   {
     "subject": "algorithms",
+    "author": "Рабат",
     "topic": "Алгоритмы и сортировки",
     "question": "Какой алгоритм соответствует псевдокоду?\\n\\nBUILD_MAX_HEAP(A)\\nfor end = n - 1 down to 1\\n    swap(A[0], A[end])\\n    heapSize = heapSize - 1\\n    HEAPIFY(A, 0)",
     "options": {
@@ -84,6 +86,10 @@ export const normalizeQuestion = (
     return { error: `${label} topic должен быть строкой.` }
   }
 
+  if (item.author !== undefined && typeof item.author !== 'string') {
+    return { error: `${label} author должен быть строкой.` }
+  }
+
   if (!item.options || typeof item.options !== 'object') {
     return { error: `${label} отсутствуют options.` }
   }
@@ -130,6 +136,7 @@ export const normalizeQuestion = (
     question: {
       id: item.id || createId(),
       subject: item.subject,
+      author: item.author?.trim() || undefined,
       topic: item.topic?.trim() || 'Без темы',
       question: item.question.trim(),
       options,

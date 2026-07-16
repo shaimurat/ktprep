@@ -5,6 +5,7 @@ export type AnswerKey = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'
 export type Question = {
   id: string
   subject: Subject
+  author?: string
   topic: string
   question: string
   options: Partial<Record<AnswerKey, string>>
