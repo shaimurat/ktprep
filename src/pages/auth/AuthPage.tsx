@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { GraduationCap, LogIn, UserPlus } from 'lucide-react'
+import { Eye, EyeOff, GraduationCap, LogIn, UserPlus } from 'lucide-react'
 import { login, register, type AuthUser } from '../../services/auth'
 
 export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [loginValue, setLoginValue] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -35,7 +36,12 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser
           <input value={loginValue} onChange={(event) => setLoginValue(event.target.value)} autoComplete="username" minLength={3} maxLength={64} required />
         </label>
         <label>Пароль
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isRegistration ? 'new-password' : 'current-password'} minLength={6} required />
+          <span className="password-input">
+            <input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isRegistration ? 'new-password' : 'current-password'} minLength={6} required />
+            <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}>
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </span>
         </label>
         {isRegistration && <small className="auth-hint">Минимум 6 символов.</small>}
         {error && <p className="auth-error" role="alert">{error}</p>}

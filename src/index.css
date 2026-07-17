@@ -98,6 +98,10 @@ button:disabled {
 .auth-card label { display: grid; gap: 7px; font-weight: 700; }
 .auth-card input { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 11px 12px; }
 .auth-card input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.password-input { position: relative; }
+.auth-card .password-input input { padding-right: 44px; }
+.password-toggle { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; transform: translateY(-50%); }
+.password-toggle:hover { color: var(--text); background: var(--panel); }
 .auth-logo { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 14px; color: white; background: var(--primary); }
 .auth-error { padding: 10px; border-radius: 8px; color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .auth-switch { border: 0; background: transparent; color: var(--primary); font-weight: 700; }
