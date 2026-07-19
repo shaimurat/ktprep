@@ -9,6 +9,7 @@
     "dev:server": "node server/index.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test:score": "rm -rf .score-test && tsc --ignoreConfig --target es2023 --module esnext --moduleResolution bundler --types node --outDir .score-test src/utils/answers.ts src/types/index.ts tests/answers.test.ts && node --test .score-test/tests/answers.test.js && rm -rf .score-test",
     "preview": "vite preview",
     "start": "node server/index.mjs"
   },

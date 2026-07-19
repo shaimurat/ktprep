@@ -306,7 +306,7 @@ app.get('/api/leaderboard', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT u.id, u.login, u.display_name, u.avatar_url,
               count(r.id)::int AS attempts,
-              coalesce(sum((r.data->>'correctAnswers')::int), 0)::int AS points,
+              coalesce(sum(coalesce(r.data->>'score', r.data->>'correctAnswers')::int), 0)::int AS points,
               coalesce(round(avg((r.data->>'percentage')::numeric)), 0)::int AS average
          FROM users u
          LEFT JOIN test_results r ON r.user_id = u.id

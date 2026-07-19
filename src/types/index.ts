@@ -20,6 +20,8 @@ export type TestResult = {
   date: string
   totalQuestions: number
   correctAnswers: number
+  score?: number
+  maxScore?: number
   percentage: number
   bySubject: Record<
     Subject,

@@ -38,7 +38,7 @@ import {
   normalizeQuestion,
   pseudocodeJsonExample,
 } from './pages/questions/utils/validation'
-import { ANSWER_KEYS, answersMatch, formatAnswers, getCorrectAnswers, getQuestionOptions } from './utils/answers'
+import { ANSWER_KEYS, formatAnswers, getCorrectAnswers, getQuestionOptions, scoreAnswers } from './utils/answers'
 import { loadQuestions, loadResults, saveQuestions, submitResult } from './services/apiStorage'
 import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
@@ -169,10 +169,15 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   const saveResult = async (mode: QuizMode, quizQuestions: Question[], answers: AnswerMap) => {
     const bySubject = emptyBySubject()
     let correctAnswers = 0
+    let score = 0
+    let maxScore = 0
 
     const questionAttempts: QuestionAttempt[] = quizQuestions.map((question) => {
-      const correct = answersMatch(answers[question.id], getCorrectAnswers(question))
+      const answerScore = scoreAnswers(answers[question.id], getCorrectAnswers(question))
+      const correct = answerScore.exact
       bySubject[question.subject].total += 1
+      score += answerScore.points
+      maxScore += answerScore.maxPoints
       if (correct) {
         bySubject[question.subject].correct += 1
         correctAnswers += 1
@@ -186,7 +191,9 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
       date: new Date().toISOString(),
       totalQuestions: quizQuestions.length,
       correctAnswers,
-      percentage: quizQuestions.length ? Math.round((correctAnswers / quizQuestions.length) * 100) : 0,
+      score,
+      maxScore,
+      percentage: maxScore ? Math.round((score / maxScore) * 100) : 0,
       bySubject,
       questionAttempts,
     }
@@ -893,7 +900,7 @@ function QuizRunner({
   const selected = quiz.answers[question.id] ?? []
   const isChecked = Boolean(quiz.checked[question.id])
   const correctAnswers = getCorrectAnswers(question)
-  const isAnsweredCorrectly = answersMatch(selected, correctAnswers)
+  const answerScore = scoreAnswers(selected, correctAnswers)
   const progress = Math.round(((quiz.index + 1) / quiz.questions.length) * 100)
 
   return (
@@ -924,8 +931,8 @@ function QuizRunner({
           ))}
         </div>
         {isChecked && (
-          <div className={isAnsweredCorrectly ? 'inline-feedback good' : 'inline-feedback bad'}>
-            {isAnsweredCorrectly ? 'Верно.' : `Неверно. Правильные ответы: ${formatAnswers(correctAnswers)}.`}
+          <div className={answerScore.points ? 'inline-feedback good' : 'inline-feedback bad'}>
+            {answerScore.exact ? 'Верно.' : answerScore.points ? 'Ответ учтён частично.' : 'Ответ не зачтён.'} Баллы: {answerScore.points}/{answerScore.maxPoints}. Правильно выбрано: {answerScore.correctCount}, лишних: {answerScore.incorrectCount}, пропущено: {answerScore.missedCount}. Правильные ответы: {formatAnswers(correctAnswers)}.
             {quiz.showExplanation && question.explanation && ` ${question.explanation}`}
           </div>
         )}
@@ -958,25 +965,30 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const bySubject = emptyBySubject()
   let correct = 0
+  let score = 0
+  let maxScore = 0
 
   quiz.questions.forEach((question) => {
+    const answerScore = scoreAnswers(quiz.answers[question.id], getCorrectAnswers(question))
     bySubject[question.subject].total += 1
-    if (answersMatch(quiz.answers[question.id], getCorrectAnswers(question))) {
+    score += answerScore.points
+    maxScore += answerScore.maxPoints
+    if (answerScore.exact) {
       bySubject[question.subject].correct += 1
       correct += 1
     }
   })
 
-  const percentage = Math.round((correct / quiz.questions.length) * 100)
+  const percentage = maxScore ? Math.round((score / maxScore) * 100) : 0
   const incorrect = quiz.questions.length - correct
   const visibleQuestions = quiz.questions
     .map((question, index) => ({ question, index }))
     .filter(({ question }) => subjectFilter === 'all' || question.subject === subjectFilter)
     .sort((a, b) => {
       if (sortMode === 'order') return a.index - b.index
-      const aCorrect = answersMatch(quiz.answers[a.question.id], getCorrectAnswers(a.question))
-      const bCorrect = answersMatch(quiz.answers[b.question.id], getCorrectAnswers(b.question))
-      return Number(aCorrect) - Number(bCorrect) || a.index - b.index
+      const aScore = scoreAnswers(quiz.answers[a.question.id], getCorrectAnswers(a.question))
+      const bScore = scoreAnswers(quiz.answers[b.question.id], getCorrectAnswers(b.question))
+      return aScore.points - bScore.points || a.index - b.index
     })
   const resultMessage = percentage >= 85
     ? 'Отличная работа! Ты уверенно справился с тестом.'
@@ -1028,11 +1040,11 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                   strokeLinecap: 'butt',
                 })}
               />
-              <span>правильных</span>
+              <span>баллов</span>
             </div>
             <div className="result-score-copy">
-              <strong>{correct} <small>из {quiz.questions.length}</small></strong>
-              <span>правильных ответов</span>
+              <strong>{score} <small>из {maxScore}</small></strong>
+              <span>баллов</span>
               <div className="result-score-stats">
                 <div>
                   <span>Правильно</span>
@@ -1073,7 +1085,8 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
 
             <div className="result-question-list">
               {visibleQuestions.map(({ question }) => {
-                const isCorrect = answersMatch(quiz.answers[question.id], getCorrectAnswers(question))
+                const answerScore = scoreAnswers(quiz.answers[question.id], getCorrectAnswers(question))
+                const isCorrect = answerScore.exact
                 const isExpanded = Boolean(expanded[question.id])
                 return (
                   <article className={`result-question ${isCorrect ? 'is-correct' : 'is-wrong'}`} key={question.id}>
@@ -1086,6 +1099,10 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                       <QuestionPrompt text={question.question} level="h3" />
                       <p className="result-answer-line">
                         Ваш ответ: <b className={isCorrect ? 'answer-good' : 'answer-bad'}>{formatAnswers(quiz.answers[question.id]) || '—'}</b>
+                        <span>•</span>
+                        <b className={answerScore.points ? 'answer-good' : 'answer-bad'}>{answerScore.points}/{answerScore.maxPoints} баллов</b>
+                        <span>•</span>
+                        Верно выбрано: {answerScore.correctCount}, лишних: {answerScore.incorrectCount}, пропущено: {answerScore.missedCount}
                         <span>•</span>
                         Правильный ответ: <b className="answer-good">{formatAnswers(getCorrectAnswers(question))}</b>
                       </p>
@@ -1298,7 +1315,7 @@ function StatisticsPage({ results }: { results: TestResult[] }) {
       <section className="analytics-surface">
         <div className="analytics-card-heading"><div><h2>Последние попытки</h2><p>История твоих тестов</p></div></div>
         <div className="history analytics-history">
-          {results.slice(0, 10).map((result) => <div className="history-row" key={result.id}><strong>{formatResultMode(result.mode)}</strong><span>{new Date(result.date).toLocaleString('ru-RU')}</span><span>{result.correctAnswers}/{result.totalQuestions}</span><b>{result.percentage}%</b></div>)}
+          {results.slice(0, 10).map((result) => <div className="history-row" key={result.id}><strong>{formatResultMode(result.mode)}</strong><span>{new Date(result.date).toLocaleString('ru-RU')}</span><span>{result.score ?? result.correctAnswers}/{result.maxScore ?? result.totalQuestions} {result.score === undefined ? 'правильных' : 'баллов'}</span><b>{result.percentage}%</b></div>)}
           {!results.length && <EmptyState text="История пока пустая." />}
         </div>
       </section>
