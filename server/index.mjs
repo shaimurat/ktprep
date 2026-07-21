@@ -468,7 +468,7 @@ app.post('/api/results', async (req, res, next) => {
     const user = await requireUser(req, res)
     if (!user) return
     const result = req.body
-    if (!result?.id || typeof result.id !== 'string' || !['subject', 'random', 'kt', 'kt-hard'].includes(result.mode)) {
+    if (!result?.id || typeof result.id !== 'string' || !['subject', 'random', 'sliv', 'kt', 'kt-hard'].includes(result.mode)) {
       return res.status(400).json({ error: 'Некорректный результат теста.' })
     }
     client = await pool.connect()

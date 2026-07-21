@@ -49,8 +49,8 @@ import type { AnswerKey, Question, QuestionAttempt, Subject, TestResult } from '
 import { createId } from './utils/id'
 import { shuffle } from './utils/shuffle'
 
-type QuizMode = 'subject' | 'random' | 'kt' | 'kt-hard'
-type QuizScope = 'topic' | 'subject' | 'random'
+type QuizMode = 'subject' | 'random' | 'sliv' | 'kt' | 'kt-hard'
+type QuizScope = 'topic' | 'subject' | 'random' | 'sliv'
 type QuizSettings = {
   subject: Subject
   scope: QuizScope
@@ -58,6 +58,8 @@ type QuizSettings = {
   topic: string
   count: number | 'all'
   showExplanation: boolean
+  slivCounts?: Record<Subject, number>
+  slivSubjects?: Record<Subject, boolean>
 }
 type HardQuizSettings = {
   topic?: string
@@ -215,14 +217,22 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
     setQuizError('')
     const pool = mainQuestions.filter((question) => {
       if (settings.scope === 'random') return true
+      if (settings.scope === 'sliv') return isSlivQuestion(question)
       if (question.subject !== settings.subject) return false
       if (settings.scope === 'subject') return true
       return (settings.author === 'all' || question.author === settings.author) && question.topic === settings.topic
     })
-    const limit = settings.count === 'all' ? pool.length : Math.min(settings.count, pool.length)
+    const quizQuestions = settings.scope === 'sliv'
+      ? SUBJECTS.flatMap((subject) => {
+        if (!settings.slivSubjects?.[subject.id]) return []
+        const subjectPool = pool.filter((question) => question.subject === subject.id)
+        const requested = settings.slivCounts?.[subject.id] ?? 0
+        return shuffle(subjectPool).slice(0, Math.min(requested, subjectPool.length))
+      })
+      : shuffle(pool).slice(0, settings.count === 'all' ? pool.length : Math.min(settings.count, pool.length))
     setActiveQuiz({
-      mode: settings.scope === 'random' ? 'random' : 'subject',
-      questions: shuffle(pool).slice(0, limit),
+      mode: settings.scope === 'random' ? 'random' : settings.scope === 'sliv' ? 'sliv' : 'subject',
+      questions: quizQuestions,
       showExplanation: settings.showExplanation,
       index: 0,
       answers: {},
@@ -336,7 +346,7 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
         )}
         {view === 'quiz' && (
           <SubjectQuizPage
-            activeQuiz={activeQuiz?.mode === 'subject' || activeQuiz?.mode === 'random' || activeQuiz?.mode === 'kt-hard' ? activeQuiz : null}
+            activeQuiz={activeQuiz?.mode === 'subject' || activeQuiz?.mode === 'random' || activeQuiz?.mode === 'sliv' || activeQuiz?.mode === 'kt-hard' ? activeQuiz : null}
             counts={counts}
             questions={mainQuestions}
             hardQuestions={hardQuestions}
@@ -664,6 +674,13 @@ function SubjectQuizPage({
   const [count, setCount] = useState<QuizSettings['count']>(10)
   const [showExplanation, setShowExplanation] = useState(true)
   const [scope, setScope] = useState<QuizScope>('topic')
+  const [slivCounts, setSlivCounts] = useState<Record<Subject, number>>({ ...defaultKtSettings })
+  const [slivSubjects, setSlivSubjects] = useState<Record<Subject, boolean>>({
+    tgo: true,
+    english: true,
+    databases: true,
+    algorithms: true,
+  })
   const authors = getAuthors(questions, selectedSubject)
   const [author, setAuthor] = useState('all')
   const topics = getTopics(questions, selectedSubject, author)
@@ -677,8 +694,21 @@ function SubjectQuizPage({
   const hardTopicCount = selectedHardTopic
     ? hardQuestions.filter((question) => question.topic === selectedHardTopic).length
     : 0
+  const slivAvailable = SUBJECTS.reduce((available, subject) => {
+    available[subject.id] = questions.filter(
+      (question) => question.subject === subject.id && isSlivQuestion(question),
+    ).length
+    return available
+  }, {} as Record<Subject, number>)
+  const allSlivSubjectsSelected = SUBJECTS.every((subject) => slivSubjects[subject.id])
+  const selectedSlivCount = SUBJECTS.reduce((total, subject) => {
+    if (!slivSubjects[subject.id]) return total
+    return total + Math.min(slivCounts[subject.id], slivAvailable[subject.id])
+  }, 0)
   const poolCount = scope === 'random'
     ? questions.length
+    : scope === 'sliv'
+      ? selectedSlivCount
     : scope === 'subject'
       ? counts[selectedSubject]
       : questions.filter(
@@ -693,14 +723,15 @@ function SubjectQuizPage({
 
   return (
     <>
-      <PageTitle title="Тренировка" text="Выбери тему, предмет целиком или полный рандом по всей базе." />
+      <PageTitle title="Тренировка" text="Выбери тему, предмет, сливы или полный рандом по всей базе." />
       <section className="panel settings-panel">
         <div className="segmented quiz-modes">
           <button className={scope === 'topic' ? 'active' : ''} type="button" onClick={() => setScope('topic')}>По теме</button>
           <button className={scope === 'subject' ? 'active' : ''} type="button" onClick={() => setScope('subject')}>По предмету</button>
+          <button className={scope === 'sliv' ? 'active' : ''} type="button" onClick={() => setScope('sliv')}>Сливы</button>
           <button className={scope === 'random' ? 'active' : ''} type="button" onClick={() => setScope('random')}>Полный рандом</button>
         </div>
-        {scope !== 'random' && (
+        {scope !== 'random' && scope !== 'sliv' && (
           <SubjectSelect
             value={selectedSubject}
             onChange={(subject) => {
@@ -733,16 +764,59 @@ function SubjectQuizPage({
             </label>
           </>
         )}
-        <div className="segmented">
-          {[5, 10, 20].map((value) => (
-            <button className={count === value ? 'active' : ''} type="button" key={value} onClick={() => setCount(value)}>
-              {value}
+        {scope === 'sliv' && (
+          <div className="sliv-settings">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={allSlivSubjectsSelected}
+                onChange={(event) => setSlivSubjects({
+                  tgo: event.target.checked,
+                  english: event.target.checked,
+                  databases: event.target.checked,
+                  algorithms: event.target.checked,
+                })}
+              />
+              Все предметы
+            </label>
+            {SUBJECTS.map((subject) => (
+              <label className="number-field sliv-subject-field" key={subject.id}>
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={slivSubjects[subject.id]}
+                    onChange={(event) => setSlivSubjects({ ...slivSubjects, [subject.id]: event.target.checked })}
+                  />
+                  {subject.title}
+                </span>
+                <input
+                  min="0"
+                  max={slivAvailable[subject.id]}
+                  type="number"
+                  disabled={!slivSubjects[subject.id]}
+                  value={slivCounts[subject.id]}
+                  onChange={(event) => setSlivCounts({
+                    ...slivCounts,
+                    [subject.id]: Math.max(0, Number(event.target.value)),
+                  })}
+                />
+                <small>доступно: {slivAvailable[subject.id]}</small>
+              </label>
+            ))}
+          </div>
+        )}
+        {scope !== 'sliv' && (
+          <div className="segmented">
+            {[5, 10, 20].map((value) => (
+              <button className={count === value ? 'active' : ''} type="button" key={value} onClick={() => setCount(value)}>
+                {value}
+              </button>
+            ))}
+            <button className={count === 'all' ? 'active' : ''} type="button" onClick={() => setCount('all')}>
+              Все
             </button>
-          ))}
-          <button className={count === 'all' ? 'active' : ''} type="button" onClick={() => setCount('all')}>
-            Все
-          </button>
-        </div>
+          </div>
+        )}
         <label className="toggle">
           <input type="checkbox" checked={showExplanation} onChange={(event) => setShowExplanation(event.target.checked)} />
           Показывать объяснение после проверки
@@ -751,12 +825,21 @@ function SubjectQuizPage({
           className="primary-button"
           type="button"
           disabled={!poolCount}
-          onClick={() => onStart({ subject: selectedSubject, scope, author, topic: selectedTopic, count, showExplanation })}
+          onClick={() => onStart({
+            subject: selectedSubject,
+            scope,
+            author,
+            topic: selectedTopic,
+            count,
+            showExplanation,
+            slivCounts,
+            slivSubjects,
+          })}
         >
           <Play size={18} /> Начать тест ({poolCount})
         </button>
       </section>
-      {selectedSubject === 'algorithms' && (
+      {selectedSubject === 'algorithms' && scope !== 'sliv' && (
         <section className="panel settings-panel hard-panel">
           <div className="hard-panel-header">
             <span className="badge hard-badge">КТ Hard</span>
@@ -916,6 +999,15 @@ function QuizRunner({
   const correctAnswers = getCorrectAnswers(question)
   const answerScore = scoreAnswers(selected, correctAnswers)
   const progress = Math.round(((quiz.index + 1) / quiz.questions.length) * 100)
+  const unansweredCount = quiz.questions.filter((item) => !quiz.answers[item.id]?.length).length
+
+  const finishEarly = () => {
+    const unansweredMessage = unansweredCount
+      ? ` Без ответа останется: ${unansweredCount}. За них будет начислено 0 баллов.`
+      : ''
+
+    if (window.confirm(`Завершить тест досрочно?${unansweredMessage}`)) onFinish()
+  }
 
   return (
     <>
@@ -927,48 +1019,84 @@ function QuizRunner({
         <span>{subjectById(question.subject).title} · {question.topic}</span>
       </div>
       <div className="progress"><span style={{ width: `${progress}%` }} /></div>
-      <section className="panel quiz-card">
-        <QuestionPrompt text={question.question} table={question.table} level="h2" />
-        <p className="muted quiz-hint">Можно выбрать несколько вариантов ответа.</p>
-        <div className="option-list">
-          {getQuestionOptions(question).map((answer) => (
-            <button
-              className={`option-button ${selected.includes(answer) ? 'selected' : ''}`}
-              type="button"
-              key={answer}
-              disabled={isChecked}
-              onClick={() => onAnswer(question.id, answer)}
-            >
-              <strong>{answer}</strong>
-              <span>{question.options[answer]}</span>
-            </button>
-          ))}
-        </div>
-        {isChecked && (
-          <div className={answerScore.points ? 'inline-feedback good' : 'inline-feedback bad'}>
-            {answerScore.exact ? 'Верно.' : answerScore.points ? 'Ответ учтён частично.' : 'Ответ не зачтён.'} Баллы: {answerScore.points}/{answerScore.maxPoints}. Правильно выбрано: {answerScore.correctCount}, лишних: {answerScore.incorrectCount}, пропущено: {answerScore.missedCount}. Правильные ответы: {formatAnswers(correctAnswers)}.
-            {quiz.showExplanation && question.explanation && ` ${question.explanation}`}
+      <div className="quiz-runner-layout">
+        <section className="panel quiz-card">
+          <QuestionPrompt text={question.question} table={question.table} level="h2" />
+          <p className="muted quiz-hint">Можно выбрать несколько вариантов ответа.</p>
+          <div className="option-list">
+            {getQuestionOptions(question).map((answer) => (
+              <button
+                className={`option-button ${selected.includes(answer) ? 'selected' : ''}`}
+                type="button"
+                key={answer}
+                disabled={isChecked}
+                onClick={() => onAnswer(question.id, answer)}
+              >
+                <strong>{answer}</strong>
+                <span>{question.options[answer]}</span>
+              </button>
+            ))}
           </div>
-        )}
-        <div className="button-row spread">
-          <button className="secondary-button" type="button" disabled={quiz.index === 0} onClick={() => onMove(quiz.index - 1)}>
-            Назад
-          </button>
-          {!isChecked ? (
-            <button className="primary-button" type="button" disabled={!selected.length} onClick={() => onCheck(question.id)}>
-              <Check size={18} /> Проверить
-            </button>
-          ) : quiz.index < quiz.questions.length - 1 ? (
-            <button className="primary-button" type="button" onClick={() => onMove(quiz.index + 1)}>
-              Далее
-            </button>
-          ) : (
-            <button className="primary-button" type="button" onClick={onFinish} disabled={isFinishing}>
-              {isFinishing ? 'Сохранение…' : 'Завершить тест'}
-            </button>
+          {isChecked && (
+            <div className={answerScore.points ? 'inline-feedback good' : 'inline-feedback bad'}>
+              {answerScore.exact ? 'Верно.' : answerScore.points ? 'Ответ учтён частично.' : 'Ответ не зачтён.'} Баллы: {answerScore.points}/{answerScore.maxPoints}. Правильно выбрано: {answerScore.correctCount}, лишних: {answerScore.incorrectCount}, пропущено: {answerScore.missedCount}. Правильные ответы: {formatAnswers(correctAnswers)}.
+              {quiz.showExplanation && question.explanation && ` ${question.explanation}`}
+            </div>
           )}
-        </div>
-      </section>
+          <div className="button-row spread">
+            <button className="secondary-button" type="button" disabled={quiz.index === 0} onClick={() => onMove(quiz.index - 1)}>
+              Назад
+            </button>
+            {!isChecked ? (
+              <button className="primary-button" type="button" disabled={!selected.length} onClick={() => onCheck(question.id)}>
+                <Check size={18} /> Проверить
+              </button>
+            ) : quiz.index < quiz.questions.length - 1 ? (
+              <button className="primary-button" type="button" onClick={() => onMove(quiz.index + 1)}>
+                Далее
+              </button>
+            ) : (
+              <button className="primary-button" type="button" onClick={onFinish} disabled={isFinishing}>
+                {isFinishing ? 'Сохранение…' : 'Завершить тест'}
+              </button>
+            )}
+          </div>
+        </section>
+        <aside className="question-navigator" aria-label="Навигация по вопросам">
+          <h3>Вопросы</h3>
+          <div className="question-number-grid">
+            {quiz.questions.map((item, index) => {
+              const isCurrent = index === quiz.index
+              const isAnswered = Boolean(quiz.answers[item.id]?.length)
+              const itemIsChecked = Boolean(quiz.checked[item.id])
+              const stateClass = itemIsChecked ? 'is-checked' : isAnswered ? 'is-answered' : ''
+
+              return (
+                <button
+                  className={`question-number ${stateClass} ${isCurrent ? 'is-current' : ''}`}
+                  type="button"
+                  key={item.id}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  aria-label={`Перейти к вопросу ${index + 1}${isAnswered ? ', есть ответ' : ''}`}
+                  onClick={() => onMove(index)}
+                >
+                  {index + 1}
+                </button>
+              )
+            })}
+          </div>
+          <div className="question-navigator-legend">
+            <span><i className="legend-current" /> Текущий</span>
+            <span><i className="legend-answered" /> Есть ответ</span>
+          </div>
+          <div className="finish-early-block">
+            {unansweredCount > 0 && <small>Без ответа: {unansweredCount}</small>}
+            <button className="danger-button full" type="button" disabled={isFinishing} onClick={finishEarly}>
+              <XCircle size={18} /> {isFinishing ? 'Сохранение…' : 'Завершить досрочно'}
+            </button>
+          </div>
+        </aside>
+      </div>
     </>
   )
 }
@@ -1462,6 +1590,10 @@ function isAlgorithmsHardQuestion(question: Question) {
   return question.subject === 'algorithms' && question.topic.trim().startsWith(ALGORITHMS_HARD_TOPIC_PREFIX)
 }
 
+function isSlivQuestion(question: Question) {
+  return question.topic.trim().toLocaleLowerCase('ru') === 'sliv'
+}
+
 function formatHardTopic(topic: string) {
   return topic.trim().replace(ALGORITHMS_HARD_TOPIC_PREFIX, '').trim()
 }
@@ -1469,6 +1601,7 @@ function formatHardTopic(topic: string) {
 function formatResultMode(mode: QuizMode) {
   if (mode === 'kt') return 'Реальный КТ'
   if (mode === 'kt-hard') return 'КТ Hard'
+  if (mode === 'sliv') return 'Сливы'
   if (mode === 'random') return 'Полный рандом'
   return 'Тренировка'
 }
