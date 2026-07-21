@@ -796,6 +796,11 @@ textarea {
   margin-bottom: 0;
 }
 
+.question-table-wrap { overflow-x: auto; margin-top: 16px; }
+.question-table { width: 100%; border-collapse: collapse; text-align: left; }
+.question-table th, .question-table td { border: 1px solid var(--border); padding: 9px 12px; }
+.question-table th { background: var(--surface-soft); }
+
 .pseudocode {
   overflow: hidden;
   margin: 18px 0 8px;

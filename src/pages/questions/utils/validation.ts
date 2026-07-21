@@ -1,7 +1,7 @@
-import { SUBJECT_IDS } from '../../../models/subjects'
-import { ANSWER_KEYS } from '../../../utils/answers'
-import type { AnswerKey, Question, Subject } from '../../../types'
-import { createId } from '../../../utils/id'
+import { SUBJECT_IDS } from '../../../models/subjects.js'
+import { ANSWER_KEYS } from '../../../utils/answers.js'
+import type { AnswerKey, Question, QuestionTable, Subject } from '../../../types'
+import { createId } from '../../../utils/id.js'
 
 type RawQuestion = Partial<Omit<Question, 'id'>> & {
   id?: string
@@ -48,6 +48,20 @@ export const pseudocodeJsonExample = `[
   }
 ]`
 
+export const tableJsonExample = `[
+  {
+    "subject": "databases",
+    "topic": "Нормальные формы",
+    "question": "Какая строка нарушает правило?",
+    "table": {
+      "headers": ["Студент", "Курс", "Группа"],
+      "rows": [["Алия", "Базы данных", "IT-21"], ["Данияр", "Алгоритмы", "IT-22"]]
+    },
+    "options": { "A": "Первая", "B": "Вторая", "C": "Ни одна" },
+    "correctAnswers": ["C"]
+  }
+]`
+
 const isSubject = (value: unknown): value is Subject =>
   typeof value === 'string' && SUBJECT_IDS.includes(value as Subject)
 
@@ -66,6 +80,21 @@ const normalizeCorrectAnswers = (item: RawQuestion) => {
     answers: answers.filter((answer, index) => answers.indexOf(answer) === index),
     error: '',
   }
+}
+
+const normalizeTable = (value: unknown): { table?: QuestionTable; error?: string } => {
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object') return { error: 'table должна содержать headers и rows.' }
+
+  const { headers, rows } = value as { headers?: unknown; rows?: unknown }
+  if (!Array.isArray(headers) || !headers.length || headers.some((cell) => typeof cell !== 'string' || !cell.trim())) {
+    return { error: 'table.headers должен быть непустым массивом строк.' }
+  }
+  if (!Array.isArray(rows) || !rows.length || rows.some((row) => !Array.isArray(row) || row.length !== headers.length || row.some((cell) => typeof cell !== 'string'))) {
+    return { error: 'table.rows должен содержать строки с тем же числом текстовых ячеек, что и headers.' }
+  }
+
+  return { table: { headers: headers.map((cell) => cell.trim()), rows } as QuestionTable }
 }
 
 export const normalizeQuestion = (
@@ -89,6 +118,9 @@ export const normalizeQuestion = (
   if (item.author !== undefined && typeof item.author !== 'string') {
     return { error: `${label} author должен быть строкой.` }
   }
+
+  const tableResult = normalizeTable(item.table)
+  if (tableResult.error) return { error: `${label} ${tableResult.error}` }
 
   if (!item.options || typeof item.options !== 'object') {
     return { error: `${label} отсутствуют options.` }
@@ -142,6 +174,7 @@ export const normalizeQuestion = (
       options,
       correctAnswers,
       explanation: item.explanation?.trim(),
+      table: tableResult.table,
     },
   }
 }

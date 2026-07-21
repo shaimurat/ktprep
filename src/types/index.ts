@@ -2,6 +2,8 @@ export type Subject = 'tgo' | 'english' | 'databases' | 'algorithms'
 
 export type AnswerKey = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'
 
+export type QuestionTable = { headers: string[]; rows: string[][] }
+
 export type Question = {
   id: string
   subject: Subject
@@ -12,6 +14,7 @@ export type Question = {
   correctAnswers: AnswerKey[]
   correctAnswer?: AnswerKey | AnswerKey[]
   explanation?: string
+  table?: QuestionTable
 }
 
 export type TestResult = {

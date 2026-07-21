@@ -37,6 +37,7 @@ import {
   jsonExample,
   normalizeQuestion,
   pseudocodeJsonExample,
+  tableJsonExample,
 } from './pages/questions/utils/validation'
 import { ANSWER_KEYS, formatAnswers, getCorrectAnswers, getQuestionOptions, scoreAnswers } from './utils/answers'
 import { loadQuestions, loadResults, saveQuestions, submitResult } from './services/apiStorage'
@@ -464,6 +465,9 @@ function AddQuestionsPage({
               <button className="secondary-button" type="button" onClick={() => setBulk(pseudocodeJsonExample)}>
                 Пример с псевдокодом
               </button>
+              <button className="secondary-button" type="button" onClick={() => setBulk(tableJsonExample)}>
+                Пример с таблицей
+              </button>
             </div>
           </div>
           <div className="pseudocode-import-hint">
@@ -473,6 +477,16 @@ function AddQuestionsPage({
               <p>
                 Запишите формулировку и код в поле <code>question</code>. Отделите код пустой строкой
                 через <code>\n\n</code>, а каждую новую строку кода — через <code>\n</code>.
+              </p>
+            </div>
+          </div>
+          <div className="pseudocode-import-hint">
+            <Braces size={20} />
+            <div>
+              <strong>Как добавить таблицу</strong>
+              <p>
+                Добавьте в вопрос <code>"table"</code> с <code>headers</code> и <code>rows</code>.
+                Каждая строка в <code>rows</code> должна содержать столько же текстовых ячеек, сколько <code>headers</code>.
               </p>
             </div>
           </div>
@@ -496,8 +510,8 @@ function AddQuestionsPage({
             </button>
           </div>
           <details className="json-help">
-            <summary>Посмотреть готовый JSON с псевдокодом</summary>
-            <pre className="format-note">{pseudocodeJsonExample}</pre>
+            <summary>Посмотреть готовый JSON с псевдокодом и таблицей</summary>
+            <pre className="format-note">{pseudocodeJsonExample}\n\n{tableJsonExample}</pre>
           </details>
         </section>
       </div>
@@ -565,7 +579,7 @@ function ManageQuestionsPage({
               <span className="badge">{subjectById(question.subject).title}</span>
               <span className="badge topic-badge">{question.topic}</span>
             </div>
-            <QuestionPrompt text={question.question} level="h3" />
+            <QuestionPrompt text={question.question} table={question.table} level="h3" />
             <div className="answers-grid">
               {getQuestionOptions(question).map((answer) => (
                 <div className={getCorrectAnswers(question).includes(answer) ? 'answer correct' : 'answer'} key={answer}>
@@ -914,7 +928,7 @@ function QuizRunner({
       </div>
       <div className="progress"><span style={{ width: `${progress}%` }} /></div>
       <section className="panel quiz-card">
-        <QuestionPrompt text={question.question} level="h2" />
+        <QuestionPrompt text={question.question} table={question.table} level="h2" />
         <p className="muted quiz-hint">Можно выбрать несколько вариантов ответа.</p>
         <div className="option-list">
           {getQuestionOptions(question).map((answer) => (
@@ -1096,7 +1110,7 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                         <span className="badge">{subjectById(question.subject).title}</span>
                         <span className="badge topic-badge">{question.topic}</span>
                       </div>
-                      <QuestionPrompt text={question.question} level="h3" />
+                      <QuestionPrompt text={question.question} table={question.table} level="h3" />
                       <p className="result-answer-line">
                         Ваш ответ: <b className={isCorrect ? 'answer-good' : 'answer-bad'}>{formatAnswers(quiz.answers[question.id]) || '—'}</b>
                         <span>•</span>
@@ -1167,14 +1181,26 @@ function SubjectResultIcon({ subject }: { subject: Subject }) {
   return <span className="result-subject-icon">{icon}</span>
 }
 
-function QuestionPrompt({ text, level }: { text: string; level: 'h2' | 'h3' }) {
+function QuestionPrompt({ text, table, level }: { text: string; table?: Question['table']; level: 'h2' | 'h3' }) {
   const { prompt, code } = splitQuestionCode(text)
   const title = level === 'h2' ? <h2>{prompt}</h2> : <h3>{prompt}</h3>
 
   return (
     <div className="question-prompt">
       {title}
+      {table && <QuestionTable table={table} />}
       {code && <PseudocodeBlock code={code} />}
+    </div>
+  )
+}
+
+function QuestionTable({ table }: { table: NonNullable<Question['table']> }) {
+  return (
+    <div className="question-table-wrap">
+      <table className="question-table">
+        <thead><tr>{table.headers.map((header, index) => <th key={`${index}-${header}`}>{header}</th>)}</tr></thead>
+        <tbody>{table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody>
+      </table>
     </div>
   )
 }
