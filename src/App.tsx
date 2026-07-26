@@ -1343,7 +1343,7 @@ function QuestionPrompt({ text, table, diagram, level }: { text: string; table?:
       {title}
       {diagram && <QuestionDiagramView diagram={diagram} />}
       {table && <QuestionTable table={table} />}
-      {code && <PseudocodeBlock code={code} />}
+      {code && <CodeBlock code={code} />}
     </div>
   )
 }
@@ -1434,21 +1434,23 @@ function QuestionTable({ table }: { table: NonNullable<Question['table']> }) {
   )
 }
 
-function PseudocodeBlock({ code }: { code: string }) {
+function CodeBlock({ code }: { code: string }) {
   const lines = code.split('\n')
+  const isSql = /\b(select|insert|update|delete|create|alter|drop)\b/i.test(code)
+  const title = isSql ? 'SQL' : 'Псевдокод'
 
   return (
-    <div className="pseudocode" aria-label="Псевдокод">
+    <div className="pseudocode" aria-label={title}>
       <div className="pseudocode-toolbar">
         <span className="pseudocode-dots" aria-hidden="true"><i /><i /><i /></span>
-        <span>Псевдокод</span>
+        <span>{title}</span>
       </div>
       <pre>
         <code>
           {lines.map((line, index) => (
             <span className="pseudocode-line" key={`${index}-${line}`}>
               <span className="pseudocode-line-number" aria-hidden="true">{index + 1}</span>
-              <span>{highlightPseudocode(line)}</span>
+              <span>{highlightCode(line)}</span>
             </span>
           ))}
         </code>
@@ -1467,16 +1469,16 @@ function splitQuestionCode(text: string) {
   if (blankLineIndex >= 0) {
     const prompt = text.slice(0, blankLineIndex).trim()
     const candidate = text.slice(blankLineIndex).trim()
-    if (looksLikePseudocode(candidate)) return { prompt, code: candidate }
+    if (looksLikeCode(candidate)) return { prompt, code: candidate }
   }
 
   const questionEnd = text.indexOf('?')
   if (questionEnd >= 0) {
     const candidate = text.slice(questionEnd + 1).trim()
-    if (looksLikePseudocode(candidate)) {
+    if (looksLikeCode(candidate)) {
       return {
         prompt: text.slice(0, questionEnd + 1).trim(),
-        code: normalizeInlinePseudocode(candidate),
+        code: normalizeInlineCode(candidate),
       }
     }
   }
@@ -1484,22 +1486,22 @@ function splitQuestionCode(text: string) {
   return { prompt: text, code: '' }
 }
 
-function looksLikePseudocode(value: string) {
-  return /\b(for|while|if|else|return|swap|heapify|build[_\s-]*max[_\s-]*heap|quicksort|partition|merge|function)\b/i.test(value)
+function looksLikeCode(value: string) {
+  return /\b(for|while|if|else|return|swap|heapify|build[_\s-]*max[_\s-]*heap|quicksort|partition|merge|function|select|insert|update|delete|create|alter|drop)\b/i.test(value)
 }
 
-function normalizeInlinePseudocode(value: string) {
+function normalizeInlineCode(value: string) {
   if (value.includes('\n')) return value
 
   return value
-    .replace(/\s+(?=(?:for|while|if|else|return|swap|heapSize|HEAPIFY|BUILD_|QUICKSORT|PARTITION|MERGE)\b)/g, '\n')
+    .replace(/\s+(?=(?:for|while|if|else|return|swap|heapSize|HEAPIFY|BUILD_|QUICKSORT|PARTITION|MERGE|SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|JOIN|INSERT|UPDATE|DELETE)\b)/gi, '\n')
     .trim()
 }
 
-function highlightPseudocode(line: string) {
-  const parts = line.split(/(\b(?:for|to|down|while|if|then|else|return|and|or|not|function)\b|\b\d+\b)/gi)
+function highlightCode(line: string) {
+  const parts = line.split(/(\b(?:for|to|down|while|if|then|else|return|and|or|not|function|select|from|where|group|by|order|having|join|on|insert|into|update|delete|create|table|as|null)\b|\b\d+\b)/gi)
   return parts.map((part, index) => {
-    if (/^(for|to|down|while|if|then|else|return|and|or|not|function)$/i.test(part)) {
+    if (/^(for|to|down|while|if|then|else|return|and|or|not|function|select|from|where|group|by|order|having|join|on|insert|into|update|delete|create|table|as|null)$/i.test(part)) {
       return <b className="code-keyword" key={`${index}-${part}`}>{part}</b>
     }
     if (/^\d+$/.test(part)) {
