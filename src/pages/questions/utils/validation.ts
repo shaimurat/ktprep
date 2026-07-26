@@ -62,6 +62,22 @@ export const tableJsonExample = `[
   }
 ]`
 
+export const sqlJsonExample = `[
+  {
+    "subject": "databases",
+    "author": "Рабат",
+    "topic": "Обычные подзапросы",
+    "question": "Что вернёт запрос, если внутренний SELECT не найдёт строку?\\n\\nSELECT name\\nFROM Employee\\nWHERE salary = (\\n  SELECT salary\\n  FROM Employee\\n  WHERE name = 'Несуществующий сотрудник'\\n);",
+    "table": {
+      "headers": ["name", "salary"],
+      "rows": [["Алия", "500"], ["Данияр", "700"]]
+    },
+    "options": { "A": "Всех сотрудников", "B": "Одну случайную строку", "C": "Ни одной строки" },
+    "correctAnswers": ["C"],
+    "explanation": "Подзапрос возвращает NULL, поэтому salary = NULL не пропускает ни одной строки."
+  }
+]`
+
 export const treeJsonExample = `[
   {
     "subject": "algorithms",

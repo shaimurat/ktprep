@@ -39,6 +39,7 @@ import {
   graphJsonExample,
   normalizeQuestion,
   pseudocodeJsonExample,
+  sqlJsonExample,
   tableJsonExample,
   treeJsonExample,
 } from './pages/questions/utils/validation'
@@ -486,6 +487,9 @@ function AddQuestionsPage({
               <button className="secondary-button" type="button" onClick={() => setBulk(tableJsonExample)}>
                 Пример с таблицей
               </button>
+              <button className="secondary-button" type="button" onClick={() => setBulk(sqlJsonExample)}>
+                Пример с SQL
+              </button>
               <button className="secondary-button" type="button" onClick={() => setBulk(treeJsonExample)}>
                 Пример с деревом
               </button>
@@ -526,6 +530,15 @@ function AddQuestionsPage({
           <div className="pseudocode-import-hint">
             <Braces size={20} />
             <div>
+              <strong>Как добавить SQL-запрос</strong>
+              <p>
+                Напишите формулировку в <code>question</code>, затем два переноса <code>\n\n</code> и SQL с переносами <code>\n</code>. Таблицу данных добавляйте отдельным полем <code>table</code>.
+              </p>
+            </div>
+          </div>
+          <div className="pseudocode-import-hint">
+            <Braces size={20} />
+            <div>
               <strong>Укажите автора курса</strong>
               <p>
                 Добавьте поле <code>"author": "Рабат"</code> в каждый вопрос. Тогда в тренировке
@@ -543,8 +556,8 @@ function AddQuestionsPage({
             </button>
           </div>
           <details className="json-help">
-            <summary>Посмотреть готовый JSON с псевдокодом и таблицей</summary>
-            <pre className="format-note">{pseudocodeJsonExample}\n\n{tableJsonExample}\n\n{treeJsonExample}\n\n{graphJsonExample}</pre>
+            <summary>Посмотреть готовые примеры JSON</summary>
+            <pre className="format-note">{pseudocodeJsonExample}\n\n{tableJsonExample}\n\n{sqlJsonExample}\n\n{treeJsonExample}\n\n{graphJsonExample}</pre>
           </details>
         </section>
       </div>
