@@ -34,10 +34,13 @@ import {
 } from 'lucide-react'
 import {
   parseQuestionsJson,
+  normalizeDiagram,
   jsonExample,
+  graphJsonExample,
   normalizeQuestion,
   pseudocodeJsonExample,
   tableJsonExample,
+  treeJsonExample,
 } from './pages/questions/utils/validation'
 import { ANSWER_KEYS, formatAnswers, getCorrectAnswers, getQuestionOptions, scoreAnswers } from './utils/answers'
 import { loadQuestions, loadResults, saveQuestions, submitResult } from './services/apiStorage'
@@ -45,7 +48,7 @@ import { getCurrentUser, logout, type AuthUser } from './services/auth'
 import { useDatabaseState } from './hooks/useDatabaseState'
 import { demoQuestions } from './models/demoQuestions'
 import { emptyBySubject, SUBJECTS, subjectById } from './models/subjects'
-import type { AnswerKey, Question, QuestionAttempt, Subject, TestResult } from './types'
+import type { AnswerKey, Question, QuestionAttempt, QuestionDiagram, QuestionGraphEdge, QuestionTree, Subject, TestResult } from './types'
 import { createId } from './utils/id'
 import { shuffle } from './utils/shuffle'
 
@@ -412,8 +415,13 @@ function AddQuestionsPage({
   const [bulk, setBulk] = useState(jsonExample)
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
+  const [diagramError, setDiagramError] = useState('')
 
   const submitSingle = async () => {
+    if (diagramError) {
+      setMessage(diagramError)
+      return
+    }
     const result = normalizeQuestion(form)
     if (result.error || !result.question) {
       setMessage(result.error ?? 'Проверьте вопрос.')
@@ -459,8 +467,8 @@ function AddQuestionsPage({
       <div className="two-column">
         <section className="panel">
           <h2>Один вопрос</h2>
-          <QuestionEditor value={form} onChange={(value) => setForm(value as Omit<Question, 'id'>)} />
-          <button className="primary-button full" type="button" onClick={submitSingle} disabled={saving}>
+          <QuestionEditor value={form} onChange={(value) => setForm(value as Omit<Question, 'id'>)} onDiagramError={setDiagramError} />
+          <button className="primary-button full" type="button" onClick={submitSingle} disabled={saving || Boolean(diagramError)}>
             <Plus size={18} /> {saving ? 'Сохранение…' : 'Добавить вопрос'}
           </button>
         </section>
@@ -478,6 +486,12 @@ function AddQuestionsPage({
               <button className="secondary-button" type="button" onClick={() => setBulk(tableJsonExample)}>
                 Пример с таблицей
               </button>
+              <button className="secondary-button" type="button" onClick={() => setBulk(treeJsonExample)}>
+                Пример с деревом
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setBulk(graphJsonExample)}>
+                Пример с графом
+              </button>
             </div>
           </div>
           <div className="pseudocode-import-hint">
@@ -487,6 +501,15 @@ function AddQuestionsPage({
               <p>
                 Запишите формулировку и код в поле <code>question</code>. Отделите код пустой строкой
                 через <code>\n\n</code>, а каждую новую строку кода — через <code>\n</code>.
+              </p>
+            </div>
+          </div>
+          <div className="pseudocode-import-hint">
+            <Braces size={20} />
+            <div>
+              <strong>Как добавить дерево или граф</strong>
+              <p>
+                Добавьте объект <code>"diagram"</code> с типом <code>tree</code> или <code>graph</code>. Готовые примеры есть в кнопках выше.
               </p>
             </div>
           </div>
@@ -521,7 +544,7 @@ function AddQuestionsPage({
           </div>
           <details className="json-help">
             <summary>Посмотреть готовый JSON с псевдокодом и таблицей</summary>
-            <pre className="format-note">{pseudocodeJsonExample}\n\n{tableJsonExample}</pre>
+            <pre className="format-note">{pseudocodeJsonExample}\n\n{tableJsonExample}\n\n{treeJsonExample}\n\n{graphJsonExample}</pre>
           </details>
         </section>
       </div>
@@ -548,6 +571,7 @@ function ManageQuestionsPage({
   const [query, setQuery] = useState('')
   const [topic, setTopic] = useState('all')
   const [editing, setEditing] = useState<Question | null>(null)
+  const [diagramError, setDiagramError] = useState('')
   const topics = getTopics(questions, selectedSubject)
   const visible = questions.filter(
     (question) =>
@@ -589,7 +613,7 @@ function ManageQuestionsPage({
               <span className="badge">{subjectById(question.subject).title}</span>
               <span className="badge topic-badge">{question.topic}</span>
             </div>
-            <QuestionPrompt text={question.question} table={question.table} level="h3" />
+            <QuestionPrompt text={question.question} table={question.table} diagram={question.diagram} level="h3" />
             <div className="answers-grid">
               {getQuestionOptions(question).map((answer) => (
                 <div className={getCorrectAnswers(question).includes(answer) ? 'answer correct' : 'answer'} key={answer}>
@@ -599,7 +623,7 @@ function ManageQuestionsPage({
             </div>
             {question.explanation && <p className="muted">{question.explanation}</p>}
             <div className="card-actions">
-              <button className="secondary-button" type="button" onClick={() => setEditing(question)}>
+              <button className="secondary-button" type="button" onClick={() => { setEditing(question); setDiagramError('') }}>
                 <Edit3 size={16} /> Редактировать
               </button>
               <button className="danger-button" type="button" onClick={() => onDelete(question.id)}>
@@ -614,7 +638,7 @@ function ManageQuestionsPage({
         <div className="modal-backdrop">
           <div className="modal">
             <h2>Редактировать вопрос</h2>
-            <QuestionEditor value={editing} onChange={(value) => setEditing({ ...value, id: editing.id })} />
+            <QuestionEditor value={editing} onChange={(value) => setEditing({ ...value, id: editing.id })} onDiagramError={setDiagramError} />
             <div className="button-row">
               <button className="ghost-button" type="button" onClick={() => setEditing(null)}>
                 Отмена
@@ -622,6 +646,7 @@ function ManageQuestionsPage({
               <button
                 className="primary-button"
                 type="button"
+                disabled={Boolean(diagramError)}
                 onClick={() => {
                   const result = normalizeQuestion(editing)
                   if (result.question) {
@@ -1021,7 +1046,7 @@ function QuizRunner({
       <div className="progress"><span style={{ width: `${progress}%` }} /></div>
       <div className="quiz-runner-layout">
         <section className="panel quiz-card">
-          <QuestionPrompt text={question.question} table={question.table} level="h2" />
+          <QuestionPrompt text={question.question} table={question.table} diagram={question.diagram} level="h2" />
           <p className="muted quiz-hint">Можно выбрать несколько вариантов ответа.</p>
           <div className="option-list">
             {getQuestionOptions(question).map((answer) => (
@@ -1238,7 +1263,7 @@ function QuizResult({ quiz, onReset }: { quiz: ActiveQuiz; onReset: () => void }
                         <span className="badge">{subjectById(question.subject).title}</span>
                         <span className="badge topic-badge">{question.topic}</span>
                       </div>
-                      <QuestionPrompt text={question.question} table={question.table} level="h3" />
+                      <QuestionPrompt text={question.question} table={question.table} diagram={question.diagram} level="h3" />
                       <p className="result-answer-line">
                         Ваш ответ: <b className={isCorrect ? 'answer-good' : 'answer-bad'}>{formatAnswers(quiz.answers[question.id]) || '—'}</b>
                         <span>•</span>
@@ -1309,17 +1334,93 @@ function SubjectResultIcon({ subject }: { subject: Subject }) {
   return <span className="result-subject-icon">{icon}</span>
 }
 
-function QuestionPrompt({ text, table, level }: { text: string; table?: Question['table']; level: 'h2' | 'h3' }) {
+function QuestionPrompt({ text, table, diagram, level }: { text: string; table?: Question['table']; diagram?: QuestionDiagram; level: 'h2' | 'h3' }) {
   const { prompt, code } = splitQuestionCode(text)
   const title = level === 'h2' ? <h2>{prompt}</h2> : <h3>{prompt}</h3>
 
   return (
     <div className="question-prompt">
       {title}
+      {diagram && <QuestionDiagramView diagram={diagram} />}
       {table && <QuestionTable table={table} />}
       {code && <PseudocodeBlock code={code} />}
     </div>
   )
+}
+
+function QuestionDiagramView({ diagram }: { diagram: QuestionDiagram }) {
+  return diagram.type === 'tree' ? <TreeDiagram root={diagram.root} /> : <GraphDiagram diagram={diagram} />
+}
+
+function TreeDiagram({ root }: { root: QuestionTree }) {
+  const nodes: Array<{ id: string; node: QuestionTree; x: number; y: number; parent?: string }> = []
+  let leaves = 0
+  let deepest = 0
+
+  const place = (node: QuestionTree, id: string, depth: number, parent?: string): number => {
+    deepest = Math.max(deepest, depth)
+    const childXs = [node.left && place(node.left, `${id}-left`, depth + 1, id), node.right && place(node.right, `${id}-right`, depth + 1, id)].filter((x): x is number => x !== undefined)
+    const x = childXs.length ? childXs.reduce((sum, value) => sum + value, 0) / childXs.length : 48 + leaves++ * 92
+    nodes.push({ id, node, x, y: 38 + depth * 86, parent })
+    return x
+  }
+
+  place(root, 'root', 0)
+  const width = Math.max(320, leaves * 92 + 96)
+  const height = 76 + deepest * 86
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+
+  return (
+    <div className="question-diagram" aria-label="Дерево">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        {nodes.map((node) => node.parent && <line key={`edge-${node.id}`} className="diagram-edge" x1={byId.get(node.parent)?.x} y1={(byId.get(node.parent)?.y ?? 0) + 20} x2={node.x} y2={node.y - 20} />)}
+        {nodes.map(({ id, node, x, y }) => (
+          <g key={id} className="diagram-node" transform={`translate(${x} ${y})`}>
+            <circle r="23" />
+            <text>{node.value}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+function GraphDiagram({ diagram }: { diagram: Extract<QuestionDiagram, { type: 'graph' }> }) {
+  const width = 460
+  const height = 280
+  const centerX = width / 2
+  const centerY = height / 2
+  const radius = diagram.nodes.length === 1 ? 0 : Math.min(94, 45 + diagram.nodes.length * 5)
+  const positions = new Map(diagram.nodes.map((node, index) => {
+    const angle = -Math.PI / 2 + index * (2 * Math.PI / diagram.nodes.length)
+    return [node.id, { x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) }]
+  }))
+
+  return (
+    <div className="question-diagram" aria-label={diagram.directed ? 'Ориентированный граф' : 'Граф'}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        {diagram.directed && <defs><marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>}
+        {diagram.edges.map((edge, index) => <GraphEdge key={`${edge.from}-${edge.to}-${index}`} edge={edge} positions={positions} directed={diagram.directed} />)}
+        {diagram.nodes.map((node) => {
+          const position = positions.get(node.id)
+          return position && <g className="diagram-node" key={node.id} transform={`translate(${position.x} ${position.y})`}><circle r="23" /><text>{node.label || node.id}</text></g>
+        })}
+      </svg>
+    </div>
+  )
+}
+
+function GraphEdge({ edge, positions, directed }: { edge: QuestionGraphEdge; positions: Map<string, { x: number; y: number }>; directed?: boolean }) {
+  const from = positions.get(edge.from)
+  const to = positions.get(edge.to)
+  if (!from || !to || (from.x === to.x && from.y === to.y)) return null
+  const distance = Math.hypot(to.x - from.x, to.y - from.y)
+  const offsetX = ((to.x - from.x) / distance) * 24
+  const offsetY = ((to.y - from.y) / distance) * 24
+  const labelX = (from.x + to.x) / 2
+  const labelY = (from.y + to.y) / 2 - 8
+
+  return <g className="diagram-edge"><line x1={from.x + offsetX} y1={from.y + offsetY} x2={to.x - offsetX} y2={to.y - offsetY} markerEnd={directed ? 'url(#graph-arrow)' : undefined} />{edge.label && <text x={labelX} y={labelY}>{edge.label}</text>}</g>
 }
 
 function QuestionTable({ table }: { table: NonNullable<Question['table']> }) {
@@ -1489,9 +1590,11 @@ function ProgressLine({ results }: { results: TestResult[] }) {
 function QuestionEditor({
   value,
   onChange,
+  onDiagramError,
 }: {
   value: Omit<Question, 'id'> | Question
   onChange: (value: Omit<Question, 'id'> | Question) => void
+  onDiagramError?: (error: string) => void
 }) {
   const update = (patch: Partial<Omit<Question, 'id'>>) => onChange({ ...value, ...patch })
   const correctAnswers = getCorrectAnswers(value as Question)
@@ -1526,6 +1629,7 @@ function QuestionEditor({
         Текст вопроса
         <textarea value={value.question} onChange={(event) => update({ question: event.target.value })} />
       </label>
+      <DiagramEditor diagram={value.diagram} onChange={(diagram) => update({ diagram })} onError={onDiagramError} />
       {ANSWER_KEYS.map((answer) => (
         <label key={answer}>
           Вариант {answer}
@@ -1553,6 +1657,57 @@ function QuestionEditor({
         <textarea value={value.explanation ?? ''} onChange={(event) => update({ explanation: event.target.value })} />
       </label>
     </div>
+  )
+}
+
+function DiagramEditor({
+  diagram,
+  onChange,
+  onError,
+}: {
+  diagram?: QuestionDiagram
+  onChange: (diagram?: QuestionDiagram) => void
+  onError?: (error: string) => void
+}) {
+  const serialized = diagram ? JSON.stringify(diagram, null, 2) : ''
+  const [text, setText] = useState(serialized)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setText(serialized)
+    setError('')
+    onError?.('')
+  }, [serialized, onError])
+
+  const updateDiagram = (next: string) => {
+    setText(next)
+    if (!next.trim()) {
+      setError('')
+      onError?.('')
+      onChange(undefined)
+      return
+    }
+
+    try {
+      const result = normalizeDiagram(JSON.parse(next))
+      if (result.error || !result.diagram) throw new Error(result.error || 'Некорректная диаграмма.')
+      setError('')
+      onError?.('')
+      onChange(result.diagram)
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'diagram должен быть корректным JSON.'
+      setError(message)
+      onError?.(message)
+    }
+  }
+
+  return (
+    <label className="diagram-editor">
+      Диаграмма: дерево или граф (JSON)
+      <textarea value={text} onChange={(event) => updateDiagram(event.target.value)} placeholder={'{"type":"tree","root":{"value":"+"}}'} />
+      <small>Для дерева: <code>type: "tree"</code> и <code>root</code>; для графа: <code>type: "graph"</code>, <code>nodes</code> и <code>edges</code>.</small>
+      {error && <span className="field-error">{error}</span>}
+    </label>
   )
 }
 

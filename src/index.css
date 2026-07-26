@@ -801,6 +801,57 @@ textarea {
 .question-table th, .question-table td { border: 1px solid var(--border); padding: 9px 12px; }
 .question-table th { background: var(--surface-soft); }
 
+.question-diagram {
+  overflow-x: auto;
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.question-diagram svg {
+  display: block;
+  width: min(100%, 560px);
+  min-width: 320px;
+  margin: 0 auto;
+}
+
+.diagram-edge line {
+  stroke: #5b6b88;
+  stroke-width: 2;
+}
+
+.diagram-edge text {
+  fill: #475569;
+  font-size: 14px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+
+.diagram-node circle {
+  fill: var(--panel);
+  stroke: #4f7ed8;
+  stroke-width: 2;
+}
+
+.diagram-node text {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.diagram-editor textarea {
+  min-height: 170px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.diagram-editor small { color: var(--muted); font-weight: 500; }
+.field-error { color: var(--danger); font-size: 13px; }
+
 .pseudocode {
   overflow: hidden;
   margin: 18px 0 8px;
@@ -1719,6 +1770,11 @@ textarea {
   background: #162743;
   color: #c4d7ff;
 }
+
+:root[data-theme='dark'] .question-diagram { background: #16213a; }
+:root[data-theme='dark'] .diagram-edge line { stroke: #8da7d6; }
+:root[data-theme='dark'] .diagram-edge text { fill: #c4d7ff; }
+:root[data-theme='dark'] .diagram-node circle { fill: #1f3153; stroke: #8dafff; }
 
 :root[data-theme='dark'] .pseudocode-import-hint p,
 :root[data-theme='dark'] .result-date,

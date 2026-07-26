@@ -4,6 +4,19 @@ export type AnswerKey = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'
 
 export type QuestionTable = { headers: string[]; rows: string[][] }
 
+export type QuestionTree = {
+  value: string
+  left?: QuestionTree
+  right?: QuestionTree
+}
+
+export type QuestionGraphNode = { id: string; label?: string }
+export type QuestionGraphEdge = { from: string; to: string; label?: string }
+
+export type QuestionDiagram =
+  | { type: 'tree'; root: QuestionTree }
+  | { type: 'graph'; nodes: QuestionGraphNode[]; edges: QuestionGraphEdge[]; directed?: boolean }
+
 export type Question = {
   id: string
   subject: Subject
@@ -15,6 +28,7 @@ export type Question = {
   correctAnswer?: AnswerKey | AnswerKey[]
   explanation?: string
   table?: QuestionTable
+  diagram?: QuestionDiagram
 }
 
 export type TestResult = {

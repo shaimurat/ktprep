@@ -1,6 +1,6 @@
 import { SUBJECT_IDS } from '../../../models/subjects.js'
 import { ANSWER_KEYS } from '../../../utils/answers.js'
-import type { AnswerKey, Question, QuestionTable, Subject } from '../../../types'
+import type { AnswerKey, Question, QuestionDiagram, QuestionGraphEdge, QuestionGraphNode, QuestionTable, QuestionTree, Subject } from '../../../types'
 import { createId } from '../../../utils/id.js'
 
 type RawQuestion = Partial<Omit<Question, 'id'>> & {
@@ -62,6 +62,40 @@ export const tableJsonExample = `[
   }
 ]`
 
+export const treeJsonExample = `[
+  {
+    "subject": "algorithms",
+    "topic": "Деревья выражений",
+    "question": "Вычислите выражение, представленное деревом:",
+    "diagram": {
+      "type": "tree",
+      "root": {
+        "value": "-",
+        "left": { "value": "*", "left": { "value": "6" }, "right": { "value": "2" } },
+        "right": { "value": "4" }
+      }
+    },
+    "options": { "A": "4", "B": "8", "C": "10", "D": "12", "E": "16" },
+    "correctAnswers": ["B"]
+  }
+]`
+
+export const graphJsonExample = `[
+  {
+    "subject": "algorithms",
+    "topic": "Графы",
+    "question": "Какой путь ведёт из A в D?",
+    "diagram": {
+      "type": "graph",
+      "directed": true,
+      "nodes": [{ "id": "A" }, { "id": "B" }, { "id": "C" }, { "id": "D" }],
+      "edges": [{ "from": "A", "to": "B", "label": "2" }, { "from": "B", "to": "D", "label": "3" }, { "from": "A", "to": "C", "label": "1" }]
+    },
+    "options": { "A": "A → B → D", "B": "A → D", "C": "B → C", "D": "C → A" },
+    "correctAnswers": ["A"]
+  }
+]`
+
 const isSubject = (value: unknown): value is Subject =>
   typeof value === 'string' && SUBJECT_IDS.includes(value as Subject)
 
@@ -97,6 +131,54 @@ const normalizeTable = (value: unknown): { table?: QuestionTable; error?: string
   return { table: { headers: headers.map((cell) => cell.trim()), rows } as QuestionTable }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const normalizeTree = (value: unknown, depth = 0): { tree?: QuestionTree; error?: string } => {
+  if (depth > 12) return { error: 'diagram.tree не должен быть глубже 12 уровней.' }
+  if (!isRecord(value) || typeof value.value !== 'string' || !value.value.trim()) {
+    return { error: 'diagram.root и каждый его узел должны содержать непустое value.' }
+  }
+
+  const node: QuestionTree = { value: value.value.trim() }
+  for (const side of ['left', 'right'] as const) {
+    if (value[side] !== undefined) {
+      const child = normalizeTree(value[side], depth + 1)
+      if (child.error || !child.tree) return child
+      node[side] = child.tree
+    }
+  }
+  return { tree: node }
+}
+
+const normalizeGraph = (value: Record<string, unknown>): { diagram?: QuestionDiagram; error?: string } => {
+  const { nodes, edges, directed } = value
+  if (!Array.isArray(nodes) || !nodes.length || nodes.length > 20 || nodes.some((node) => !isRecord(node) || typeof node.id !== 'string' || !node.id.trim() || (node.label !== undefined && typeof node.label !== 'string'))) {
+    return { error: 'diagram.nodes должен содержать от 1 до 20 вершин с непустым id.' }
+  }
+  if (!Array.isArray(edges) || edges.some((edge) => !isRecord(edge) || typeof edge.from !== 'string' || typeof edge.to !== 'string' || (edge.label !== undefined && typeof edge.label !== 'string'))) {
+    return { error: 'diagram.edges должен быть массивом рёбер с from и to.' }
+  }
+  if (directed !== undefined && typeof directed !== 'boolean') return { error: 'diagram.directed должен быть true или false.' }
+
+  const normalizedNodes = nodes.map((node) => ({ id: (node as Record<string, string>).id.trim(), label: (node as Record<string, string>).label?.trim() || undefined })) as QuestionGraphNode[]
+  const ids = new Set(normalizedNodes.map((node) => node.id))
+  if (ids.size !== normalizedNodes.length) return { error: 'diagram.nodes не должен содержать повторяющиеся id.' }
+
+  const normalizedEdges = edges.map((edge) => ({ from: (edge as Record<string, string>).from.trim(), to: (edge as Record<string, string>).to.trim(), label: (edge as Record<string, string>).label?.trim() || undefined })) as QuestionGraphEdge[]
+  if (normalizedEdges.some((edge) => !ids.has(edge.from) || !ids.has(edge.to))) return { error: 'Каждое ребро diagram.edges должно ссылаться на существующие вершины.' }
+
+  return { diagram: { type: 'graph', nodes: normalizedNodes, edges: normalizedEdges, directed } }
+}
+
+export const normalizeDiagram = (value: unknown): { diagram?: QuestionDiagram; error?: string } => {
+  if (value === undefined) return {}
+  if (!isRecord(value) || (value.type !== 'tree' && value.type !== 'graph')) return { error: 'diagram.type должен быть tree или graph.' }
+  if (value.type === 'graph') return normalizeGraph(value)
+
+  const tree = normalizeTree(value.root)
+  return tree.error || !tree.tree ? { error: tree.error } : { diagram: { type: 'tree', root: tree.tree } }
+}
+
 export const normalizeQuestion = (
   item: RawQuestion,
   index = 0,
@@ -121,6 +203,9 @@ export const normalizeQuestion = (
 
   const tableResult = normalizeTable(item.table)
   if (tableResult.error) return { error: `${label} ${tableResult.error}` }
+
+  const diagramResult = normalizeDiagram(item.diagram)
+  if (diagramResult.error) return { error: `${label} ${diagramResult.error}` }
 
   if (!item.options || typeof item.options !== 'object') {
     return { error: `${label} отсутствуют options.` }
@@ -175,6 +260,7 @@ export const normalizeQuestion = (
       correctAnswers,
       explanation: item.explanation?.trim(),
       table: tableResult.table,
+      diagram: diagramResult.diagram,
     },
   }
 }
