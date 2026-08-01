@@ -73,6 +73,15 @@ type HardQuizSettings = {
 type KtSettings = Record<Subject, number>
 type AnswerMap = Record<string, AnswerKey[] | undefined>
 type Theme = 'light' | 'dark'
+type ActiveQuiz = {
+  mode: QuizMode
+  questions: Question[]
+  showExplanation: boolean
+  index: number
+  answers: AnswerMap
+  checked: Record<string, boolean>
+  finished: boolean
+}
 
 const ALGORITHMS_HARD_TOPIC_PREFIX = 'КТ Hard —'
 
@@ -91,6 +100,21 @@ const defaultKtSettings: KtSettings = {
   english: 10,
   databases: 20,
   algorithms: 20,
+}
+
+const quizStorageKey = (userId: string) => `kt-active-quiz:${userId}`
+
+const loadSavedQuiz = (userId: string): ActiveQuiz | null => {
+  const saved = localStorage.getItem(quizStorageKey(userId))
+  if (!saved) return null
+
+  try {
+    const quiz = JSON.parse(saved) as ActiveQuiz
+    return quiz?.questions?.length && !quiz.finished ? quiz : null
+  } catch {
+    localStorage.removeItem(quizStorageKey(userId))
+    return null
+  }
 }
 
 function App() {
@@ -125,15 +149,7 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   const [quizError, setQuizError] = useState('')
   const [isFinishingQuiz, setIsFinishingQuiz] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<Subject>('tgo')
-  const [activeQuiz, setActiveQuiz] = useState<{
-    mode: QuizMode
-    questions: Question[]
-    showExplanation: boolean
-    index: number
-    answers: AnswerMap
-    checked: Record<string, boolean>
-    finished: boolean
-  } | null>(null)
+  const [activeQuiz, setActiveQuiz] = useState<ActiveQuiz | null>(() => loadSavedQuiz(user.id))
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -144,6 +160,14 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
   useEffect(() => {
     loadResults().then(setResults).catch(() => setResultsError('Не удалось загрузить результаты тестов.'))
   }, [])
+
+  useEffect(() => {
+    if (activeQuiz && !activeQuiz.finished) {
+      localStorage.setItem(quizStorageKey(user.id), JSON.stringify(activeQuiz))
+    } else {
+      localStorage.removeItem(quizStorageKey(user.id))
+    }
+  }, [activeQuiz, user.id])
 
   useEffect(() => {
     if (!routeFromPathname(location.pathname)) routerNavigate(ROUTE_PATHS.home, { replace: true })
@@ -168,7 +192,6 @@ function AuthenticatedApp({ user, onLogout, onUserChange }: { user: AuthUser; on
 
   const navigate = (nextView: AppRoute, subject?: Subject) => {
     if (subject) setSelectedSubject(subject)
-    setActiveQuiz(null)
     routerNavigate(ROUTE_PATHS[nextView])
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -941,16 +964,6 @@ function SubjectQuizPage({
   )
 }
 
-type ActiveQuiz = {
-  mode: QuizMode
-  questions: Question[]
-  showExplanation: boolean
-  index: number
-  answers: AnswerMap
-  checked: Record<string, boolean>
-  finished: boolean
-}
-
 function KtModePage({
   activeQuiz,
   counts,
@@ -1107,7 +1120,8 @@ function QuizRunner({
               const isCurrent = index === quiz.index
               const isAnswered = Boolean(quiz.answers[item.id]?.length)
               const itemIsChecked = Boolean(quiz.checked[item.id])
-              const stateClass = itemIsChecked ? 'is-checked' : isAnswered ? 'is-answered' : ''
+              const itemIsCorrect = scoreAnswers(quiz.answers[item.id], getCorrectAnswers(item)).exact
+              const stateClass = itemIsChecked ? itemIsCorrect ? 'is-correct' : 'is-wrong' : isAnswered ? 'is-answered' : ''
 
               return (
                 <button
@@ -1125,7 +1139,9 @@ function QuizRunner({
           </div>
           <div className="question-navigator-legend">
             <span><i className="legend-current" /> Текущий</span>
-            <span><i className="legend-answered" /> Есть ответ</span>
+            <span><i className="legend-answered" /> Выбран</span>
+            <span><i className="legend-correct" /> Верно</span>
+            <span><i className="legend-wrong" /> Ошибка</span>
           </div>
           <div className="finish-early-block">
             {unansweredCount > 0 && <small>Без ответа: {unansweredCount}</small>}

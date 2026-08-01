@@ -1159,11 +1159,22 @@ textarea {
   color: var(--primary-dark);
 }
 
-.question-number.is-answered,
-.question-number.is-checked {
+.question-number.is-answered {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
+  color: var(--primary-dark);
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+}
+
+.question-number.is-correct {
   border-color: color-mix(in srgb, var(--success) 55%, var(--line));
   color: var(--success);
   background: color-mix(in srgb, var(--success) 12%, var(--panel));
+}
+
+.question-number.is-wrong {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
 }
 
 .question-number.is-current {
@@ -1193,7 +1204,9 @@ textarea {
 }
 
 .legend-current { background: var(--primary); }
-.legend-answered { background: var(--success); }
+.legend-answered { background: var(--primary-dark); }
+.legend-correct { background: var(--success); }
+.legend-wrong { background: var(--danger); }
 
 .finish-early-block {
   display: grid;
